@@ -21,6 +21,8 @@ interface DashboardData {
   pageDaily: Row[];
   /** Klikken per dag per zoekterm, voor de anomalie-widget. */
   queryDaily: Row[];
+  /** Impressies en posities per zoekterm per pagina, voor de cannibalisatie-widget. */
+  queryPage: Row[];
 }
 
 type WidgetSpan = 2 | 3 | 4 | 6 | 12;
@@ -432,6 +434,99 @@ function Anomalies({ rows, field }: { rows: Row[]; field: "page" | "query" }) {
   );
 }
 
+const CANNIBAL_MIN_IMPRESSIONS = 200;
+const CANNIBAL_PAGE_SHARE = 0.15;
+
+interface CannibalPage {
+  page: string;
+  impressions: number;
+  position: number;
+}
+
+interface Cannibal {
+  query: string;
+  impressions: number;
+  pages: CannibalPage[];
+}
+
+function findCannibals(rows: Row[]): Cannibal[] {
+  const grouped = new Map<string, Map<string, { impressions: number; weighted: number; weight: number }>>();
+
+  for (const row of rows) {
+    const query = String(row.query ?? "").trim();
+    const page = String(row.page ?? "").trim();
+    if (query === "" || page === "") continue;
+    const impressions = num(row.impressions);
+    const pages = grouped.get(query) ?? new Map<string, { impressions: number; weighted: number; weight: number }>();
+    const entry = pages.get(page) ?? { impressions: 0, weighted: 0, weight: 0 };
+    entry.impressions += impressions;
+    entry.weighted += num(row.position) * impressions;
+    entry.weight += impressions;
+    pages.set(page, entry);
+    grouped.set(query, pages);
+  }
+
+  const cannibals: Cannibal[] = [];
+  for (const [query, pages] of grouped) {
+    if (pages.size < 2) continue;
+    const list: CannibalPage[] = Array.from(pages)
+      .map(([page, entry]) => ({
+        page,
+        impressions: entry.impressions,
+        position: entry.weight > 0 ? entry.weighted / entry.weight : 0,
+      }))
+      .sort((a, b) => b.impressions - a.impressions);
+    const total = list.reduce((sum, item) => sum + item.impressions, 0);
+    // Alleen echte concurrentie: genoeg vertoningen en de tweede pagina doet echt mee.
+    if (total < CANNIBAL_MIN_IMPRESSIONS) continue;
+    if (list[1].impressions < CANNIBAL_PAGE_SHARE * list[0].impressions) continue;
+    cannibals.push({ query, impressions: total, pages: list.slice(0, 3) });
+  }
+
+  return cannibals.sort((a, b) => b.impressions - a.impressions).slice(0, 7);
+}
+
+function Cannibalisation({ rows }: { rows: Row[] }) {
+  const cannibals = findCannibals(rows);
+  if (cannibals.length === 0) {
+    return <WidgetEmpty>Geen zoektermen die door meerdere pagina's worden opgevangen.</WidgetEmpty>;
+  }
+
+  return (
+    <table className="widget-table">
+      <thead>
+        <tr>
+          <th>Zoekterm</th>
+          <th className="num">Impr.</th>
+          <th>Pagina's (positie)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {cannibals.map((item) => (
+          <tr key={item.query}>
+            <td className="ellipsis" title={item.query}>{item.query}</td>
+            <td className="num">{fmt(item.impressions, 0)}</td>
+            <td>
+              <div className="cannibal-pages">
+                {item.pages.map((entry) => (
+                  <span
+                    key={entry.page}
+                    className={`cannibal-page${entry.position <= 3 ? " top3" : entry.position <= 10 ? " page1" : ""}`}
+                    title={entry.page}
+                  >
+                    <span className="ellipsis">{pathLabel(entry.page)}</span>
+                    <span className="cannibal-pos">{fmt(entry.position, 1)}</span>
+                  </span>
+                ))}
+              </div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function Opportunities({ rows }: { rows: Row[] }) {
   const opportunities = rows
     .filter((row) => num(row.position) >= 5 && num(row.position) <= 20 && num(row.impressions) > 100)
@@ -587,6 +682,14 @@ const WIDGETS: WidgetDef[] = [
     category: "Tabel",
     render: (data) => <Anomalies rows={data.queryDaily} field="query" />,
   },
+  {
+    id: "cannibalisation",
+    title: "Cannibalisatie",
+    subtitle: "Zoektermen die meerdere pagina's opvangen",
+    span: 6,
+    category: "Tabel",
+    render: (data) => <Cannibalisation rows={data.queryPage} />,
+  },
 ];
 
 const WIDGET_IDS = WIDGETS.map((widget) => widget.id);
@@ -691,7 +794,7 @@ function WidgetFrame({
 }
 
 export default function Dashboard({ accounts }: Props) {
-  const [data, setData] = useState<DashboardData>({ gsc: [], ads: [], ga4: [], queries: [], pages: [], pageDaily: [], queryDaily: [] });
+  const [data, setData] = useState<DashboardData>({ gsc: [], ads: [], ga4: [], queries: [], pages: [], pageDaily: [], queryDaily: [], queryPage: [] });
   const [loading, setLoading] = useState(true);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -743,7 +846,7 @@ export default function Dashboard({ accounts }: Props) {
       setError(null);
       const from = dateNDaysAgo(rangeDays - 1);
       const anomalyFrom = dateNDaysAgo(ANOMALY_LOOKBACK - 1);
-      const [gsc, ads, ga4, queries, pages, pageDaily, queryDaily] = await Promise.all([
+      const [gsc, ads, ga4, queries, pages, pageDaily, queryDaily, queryPage] = await Promise.all([
         safeQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["date", "clicks", "impressions", "ctr", "position"],
@@ -779,9 +882,14 @@ export default function Dashboard({ accounts }: Props) {
           fields: ["date", "query", "clicks", "position"],
           date_from: anomalyFrom, group_by: ["date", "query"], limit: 5000,
         }),
+        safeQuery({
+          connector: "searchconsole", account: accounts.searchconsole,
+          fields: ["query", "page", "clicks", "impressions", "position"],
+          date_from: dateNDaysAgo(89), group_by: ["query", "page"], limit: 5000,
+        }),
       ]);
       if (cancelled) return;
-      setData({ gsc, ads, ga4, queries, pages, pageDaily, queryDaily });
+      setData({ gsc, ads, ga4, queries, pages, pageDaily, queryDaily, queryPage });
       setError(errors.length > 0 ? errors[0] : null);
       setUpdatedAt(new Date());
       setLoading(false);

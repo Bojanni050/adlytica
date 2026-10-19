@@ -810,3 +810,28 @@ label.field { display: block; color: var(--muted); font-size: 12px; margin-botto
 .wp-counter.near { color: var(--warn); }
 .wp-counter.over { color: var(--danger); }
 .wp-saved { color: var(--accent-2); }
+
+/* Cannibalisatie: welke pagina's vangen dezelfde zoekterm */
+.cannibal-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 0 2px 14px;
+}
+
+.cannibal-page {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.cannibal-page.top3 { border-color: rgba(16, 185, 129, 0.45); color: var(--accent-2); }
+.cannibal-page.page1 { border-color: rgba(245, 158, 11, 0.4); color: var(--accent); }
+.cannibal-page .ellipsis { max-width: 140px; }
+.cannibal-pos { color: var(--gold); font-variant-numeric: tabular-nums; }

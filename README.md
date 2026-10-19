@@ -8,6 +8,7 @@ Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Googl
 - **Anomalieën** — twee widgets op het dashboard die pagina's en zoektermen tonen waarvan de klikken week-op-week met 30% of meer zijn gezakt (alleen items met minstens 5 klikken in de week ervoor), gesorteerd op het aantal verloren klikken
 - **Keyword Search** — eigen zoektermen uit Search Console (klikken, impressies, CTR, positie) én Keyword Planner-ideeën uit Google Ads (volume, competitie, biedranges)
 - **Posities** — volg zoektermen en zie hun Search Console-positie per dag als grafiek, met weekdaling/stijging en een sparkline per term; historie wordt lokaal bewaard in `rankings.json`
+- **Cannibalisatie** — widget die zoektermen toont waar meerdere pagina's samen vertoningen pakken (minstens 200 vertoningen, en de tweede pagina haalt minstens 15% van de eerste), met per pagina de positie als pil (mint voor top 3, amber voor pagina 1), gesorteerd op totale vertoningen
 - **SEO Analyse** — best presterende pagina's, zoektermen per pagina en automatisch gedetecteerde kansen (positie 5–20); per pagina opent de knop **Rank Math** een paneel waarin je de SEO-titel en meta-omschrijving bekijkt en direct naar WordPress wegschrijft
 - **Advertenties** — campagne-overzicht (30 dagen, inclusief gepauzeerd), pauzeren/activeren en nieuwe campagnes + ad groups aanmaken
 - **Google Trends** — zoekinteresse over tijd en gerelateerde/opkomende zoektermen (via pytrends)
