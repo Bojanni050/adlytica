@@ -50,6 +50,34 @@ export async function setDashboardLayout(layout: unknown): Promise<void> {
   return invoke("set_dashboard_layout", { layout: layout ?? null });
 }
 
+export interface RankPoint {
+  date: string;
+  position: number;
+}
+
+export interface RankingStore {
+  tracked: string[];
+  history: Record<string, RankPoint[]>;
+}
+
+export async function getRankings(): Promise<RankingStore> {
+  return invoke("get_rankings");
+}
+
+export async function trackKeyword(keyword: string): Promise<RankingStore> {
+  return invoke("track_keyword", { keyword });
+}
+
+export async function untrackKeyword(keyword: string): Promise<RankingStore> {
+  return invoke("untrack_keyword", { keyword });
+}
+
+export async function recordRankPoints(
+  points: { keyword: string; date: string; position: number }[],
+): Promise<RankingStore> {
+  return invoke("record_rank_points", { points });
+}
+
 export interface SettingsStatus {
   windsor_key_set: boolean;
   mistral_key_set: boolean;

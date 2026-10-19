@@ -3,13 +3,17 @@ import { getDashboardLayout, setDashboardLayout } from "./api";
 export interface DashboardLayout {
   order: string[];
   hidden: string[];
+  /** Gekozen periode in dagen (7, 30, 90 of 180). */
+  rangeDays?: number;
 }
+
+const RANGE_CHOICES = [7, 30, 90, 180];
 
 /** Oude, lokale opslag; alleen nog als terugval en om eenmalig te migreren. */
 export const DASHBOARD_LAYOUT_KEY = "adlytica.dashboard.layout.v1";
 
 export function defaultLayout(ids: string[]): DashboardLayout {
-  return { order: [...ids], hidden: [] };
+  return { order: [...ids], hidden: [], rangeDays: 90 };
 }
 
 /** Maakt van willekeurige opgeslagen data een geldige layout voor deze widgetlijst. */
@@ -24,7 +28,10 @@ export function normalizeLayout(raw: unknown, ids: string[]): DashboardLayout {
   const hidden = Array.isArray(parsed.hidden)
     ? parsed.hidden.filter((id): id is string => typeof id === "string" && known.has(id))
     : [];
-  return { order, hidden: Array.from(new Set(hidden)) };
+  const rangeDays = RANGE_CHOICES.includes(Number(parsed.rangeDays))
+    ? Number(parsed.rangeDays)
+    : 90;
+  return { order, hidden: Array.from(new Set(hidden)), rangeDays };
 }
 
 function readLocalLayout(): unknown {

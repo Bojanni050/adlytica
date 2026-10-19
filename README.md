@@ -4,8 +4,9 @@ Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Googl
 
 ## Functies
 
-- **Dashboard** — 90-daagse samenvatting en dagelijkse trends uit GA4, Search Console en Google Ads
+- **Dashboard** — samenvatting en dagelijkse trends uit GA4, Search Console en Google Ads over 7, 30, 90 of 180 dagen, met periodevergelijking; de kaarten zijn losse widgets die je zelf verplaatst, verbergt en weer aanzet
 - **Keyword Search** — eigen zoektermen uit Search Console (klikken, impressies, CTR, positie) én Keyword Planner-ideeën uit Google Ads (volume, competitie, biedranges)
+- **Posities** — volg zoektermen en zie hun Search Console-positie per dag als grafiek, met weekdaling/stijging en een sparkline per term; historie wordt lokaal bewaard in `rankings.json`
 - **SEO Analyse** — best presterende pagina's, zoektermen per pagina en automatisch gedetecteerde kansen (positie 5–20)
 - **Advertenties** — campagne-overzicht (30 dagen, inclusief gepauzeerd), pauzeren/activeren en nieuwe campagnes + ad groups aanmaken
 - **Google Trends** — zoekinteresse over tijd en gerelateerde/opkomende zoektermen (via pytrends)

@@ -3,17 +3,19 @@ import { getAccounts } from "./lib/api";
 import { DEFAULT_ACCOUNTS } from "./lib/constants";
 import Dashboard from "./views/Dashboard";
 import KeywordSearch from "./views/KeywordSearch";
+import Rankings from "./views/Rankings";
 import SeoAnalysis from "./views/SeoAnalysis";
 import Campaigns from "./views/Campaigns";
 import Trends from "./views/Trends";
 import Adly from "./views/Adly";
 import Settings from "./views/Settings";
 
-type ViewId = "dashboard" | "keywords" | "seo" | "campaigns" | "adly" | "trends" | "settings";
+type ViewId = "dashboard" | "keywords" | "rankings" | "seo" | "campaigns" | "adly" | "trends" | "settings";
 
 const NAV: { id: ViewId; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▤" },
   { id: "keywords", label: "Keyword Search", icon: "⌕" },
+  { id: "rankings", label: "Posities", icon: "↕" },
   { id: "seo", label: "SEO Analyse", icon: "◈" },
   { id: "campaigns", label: "Advertenties", icon: "◧" },
   { id: "adly", label: "Adly AI", icon: "✦" },
@@ -36,6 +38,7 @@ export default function App() {
   const views: Record<ViewId, React.ReactNode> = {
     dashboard: <Dashboard accounts={accounts} />,
     keywords: <KeywordSearch accounts={accounts} />,
+    rankings: <Rankings accounts={accounts} />,
     seo: <SeoAnalysis accounts={accounts} />,
     campaigns: <Campaigns accounts={accounts} />,
     adly: <Adly accounts={accounts} />,

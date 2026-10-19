@@ -27,7 +27,7 @@ interface WidgetDef {
   subtitle?: string;
   span: WidgetSpan;
   category: "KPI" | "Grafiek" | "Tabel";
-  render: (data: DashboardData) => React.ReactNode;
+  render: (data: DashboardData, days: number) => React.ReactNode;
 }
 
 const TOOLTIP_STYLE: React.CSSProperties = {
@@ -40,6 +40,9 @@ const TOOLTIP_STYLE: React.CSSProperties = {
 };
 
 const AXIS_TICK = { fill: "#8b98a8", fontSize: 11 };
+
+/** Periodes in dagen; dezelfde waarden worden in de config bewaard. */
+const RANGES = [7, 30, 90, 180];
 
 function compact(value: number): string {
   const abs = Math.abs(value);
@@ -63,16 +66,16 @@ function totals(rows: Row[], metric: string): number {
   return rows.reduce((sum, row) => sum + num(row[metric]), 0);
 }
 
-/** Vergelijkt de laatste 30 datadagen met de 30 dagen daarvoor. */
-function periodDelta(rows: Row[], metric: string): number | null {
+/** Vergelijkt de laatste `days` datadagen met de even lange periode daarvoor. */
+function periodDelta(rows: Row[], metric: string, days: number): number | null {
   const times = rows
     .map((row) => new Date(String(row.date ?? "")).getTime())
     .filter((time) => Number.isFinite(time));
   if (times.length === 0) return null;
   const day = 86_400_000;
   const latest = Math.max(...times);
-  const currentStart = latest - 29 * day;
-  const previousStart = latest - 59 * day;
+  const currentStart = latest - (days - 1) * day;
+  const previousStart = latest - (days * 2 - 1) * day;
   let current = 0;
   let previous = 0;
   for (const row of rows) {
@@ -117,23 +120,23 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   );
 }
 
-function Kpi({ rows, metric, color }: { rows: Row[]; metric: string; color: string }) {
+function Kpi({ rows, metric, color, days }: { rows: Row[]; metric: string; color: string; days: number }) {
   const total = totals(rows, metric);
-  const delta = periodDelta(rows, metric);
-  const trend = series(rows, metric).slice(-30).map((point) => point.value);
+  const delta = periodDelta(rows, metric, days);
+  const trend = series(rows, metric).slice(-days).map((point) => point.value);
 
   return (
     <div className="kpi">
       <div className="kpi-value">{fmt(total, 0)}</div>
       <div className="kpi-meta">
         {delta === null ? (
-          <span className="hint">90 dagen totaal</span>
+          <span className="hint">{days} dagen totaal</span>
         ) : (
           <span className={`kpi-delta ${delta >= 0 ? "up" : "down"}`}>
             {delta >= 0 ? "▲" : "▼"} {fmt(Math.abs(delta) * 100, 1)}%
           </span>
         )}
-        {delta !== null && <span className="hint">vs. vorige 30 d</span>}
+        {delta !== null && <span className="hint">vs. vorige {days} d</span>}
       </div>
       <Sparkline values={trend} color={color} />
     </div>
@@ -369,50 +372,50 @@ const WIDGETS: WidgetDef[] = [
   {
     id: "kpi-clicks",
     title: "Organische klikken",
-    subtitle: "Search Console · 90 dagen",
+    subtitle: "Search Console",
     span: 2,
     category: "KPI",
-    render: (data) => <Kpi rows={data.gsc} metric="clicks" color="#10b981" />,
+    render: (data, days) => <Kpi rows={data.gsc} metric="clicks" color="#10b981" days={days} />,
   },
   {
     id: "kpi-impressions",
     title: "Impressies",
-    subtitle: "Search Console · 90 dagen",
+    subtitle: "Search Console",
     span: 2,
     category: "KPI",
-    render: (data) => <Kpi rows={data.gsc} metric="impressions" color="#34d399" />,
+    render: (data, days) => <Kpi rows={data.gsc} metric="impressions" color="#34d399" days={days} />,
   },
   {
     id: "kpi-spend",
     title: "Advertentiekosten",
-    subtitle: "Google Ads · 90 dagen",
+    subtitle: "Google Ads",
     span: 2,
     category: "KPI",
-    render: (data) => <Kpi rows={data.ads} metric="spend" color="#f59e0b" />,
+    render: (data, days) => <Kpi rows={data.ads} metric="spend" color="#f59e0b" days={days} />,
   },
   {
     id: "kpi-conversions",
     title: "Conversies",
-    subtitle: "Google Ads · 90 dagen",
+    subtitle: "Google Ads",
     span: 2,
     category: "KPI",
-    render: (data) => <Kpi rows={data.ads} metric="conversions" color="#fbbf24" />,
+    render: (data, days) => <Kpi rows={data.ads} metric="conversions" color="#fbbf24" days={days} />,
   },
   {
     id: "kpi-sessions",
     title: "Sessies",
-    subtitle: "GA4 · 90 dagen",
+    subtitle: "GA4",
     span: 2,
     category: "KPI",
-    render: (data) => <Kpi rows={data.ga4} metric="sessions" color="#10b981" />,
+    render: (data, days) => <Kpi rows={data.ga4} metric="sessions" color="#10b981" days={days} />,
   },
   {
     id: "kpi-users",
     title: "Gebruikers",
-    subtitle: "GA4 · 90 dagen",
+    subtitle: "GA4",
     span: 2,
     category: "KPI",
-    render: (data) => <Kpi rows={data.ga4} metric="users" color="#fbbf24" />,
+    render: (data, days) => <Kpi rows={data.ga4} metric="users" color="#fbbf24" days={days} />,
   },
   {
     id: "chart-organic",
@@ -586,6 +589,7 @@ export default function Dashboard({ accounts }: Props) {
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const rangeDays = layout.rangeDays ?? 90;
 
   // De indeling staat in config.json (via de Rust-kant); pas opslaan nadat die is gelezen,
   // anders overschrijft de standaardindeling de bewaarde keuze.
@@ -607,6 +611,7 @@ export default function Dashboard({ accounts }: Props) {
   }, [layout, layoutLoaded]);
 
   useEffect(() => {
+    if (!layoutLoaded) return;
     let cancelled = false;
     const errors: string[] = [];
 
@@ -622,7 +627,7 @@ export default function Dashboard({ accounts }: Props) {
     async function load() {
       setLoading(true);
       setError(null);
-      const from = dateNDaysAgo(89);
+      const from = dateNDaysAgo(rangeDays - 1);
       const [gsc, ads, ga4, queries, pages] = await Promise.all([
         safeQuery({
           connector: "searchconsole", account: accounts.searchconsole,
@@ -660,7 +665,7 @@ export default function Dashboard({ accounts }: Props) {
 
     load();
     return () => { cancelled = true; };
-  }, [accounts, reloadKey]);
+  }, [accounts, reloadKey, rangeDays, layoutLoaded]);
 
   const visibleWidgets = layout.order
     .filter((id) => !layout.hidden.includes(id))
@@ -725,14 +730,31 @@ export default function Dashboard({ accounts }: Props) {
   const showSkeleton = loading && !loadedOnce;
   const hiddenCount = layout.hidden.length;
 
+  function setRange(days: number) {
+    setLayout((current) => ({ ...current, rangeDays: days }));
+  }
+
   return (
     <div className={editMode ? "dashboard edit-mode" : "dashboard"}>
       <div className="dash-header">
         <div className="dash-heading">
           <h1>Dashboard</h1>
-          <p className="subtitle">Search Console, Google Ads en GA4 · laatste 90 dagen</p>
+          <p className="subtitle">Search Console, Google Ads en GA4 · laatste {rangeDays} dagen</p>
         </div>
         <div className="dash-actions">
+          <div className="range-switch" role="group" aria-label="Periode">
+            {RANGES.map((days) => (
+              <button
+                key={days}
+                type="button"
+                className={days === rangeDays ? "range-option active" : "range-option"}
+                onClick={() => setRange(days)}
+                aria-pressed={days === rangeDays}
+              >
+                {days}d
+              </button>
+            ))}
+          </div>
           {updatedAt && !loading && (
             <span className="dash-updated">
               Bijgewerkt {updatedAt.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}
@@ -846,7 +868,7 @@ export default function Dashboard({ accounts }: Props) {
               onDrop={handleDrop}
               onDragEnd={handleDragEnd}
             >
-              {widget.render(data)}
+              {widget.render(data, rangeDays)}
             </WidgetFrame>
           ))}
         </div>

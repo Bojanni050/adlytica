@@ -1,5 +1,6 @@
 mod adly;
 mod config;
+mod rankings;
 mod trends;
 mod windsor;
 
@@ -112,6 +113,35 @@ async fn set_dashboard_layout(
 }
 
 #[tauri::command]
+async fn get_rankings() -> rankings::RankingStore {
+    rankings::load()
+}
+
+#[tauri::command]
+async fn track_keyword(keyword: String) -> Result<rankings::RankingStore, String> {
+    let mut store = rankings::load();
+    store.track(&keyword)?;
+    rankings::save(&store)?;
+    Ok(store)
+}
+
+#[tauri::command]
+async fn untrack_keyword(keyword: String) -> Result<rankings::RankingStore, String> {
+    let mut store = rankings::load();
+    store.untrack(&keyword);
+    rankings::save(&store)?;
+    Ok(store)
+}
+
+#[tauri::command]
+async fn record_rank_points(points: Vec<rankings::RankPayload>) -> Result<rankings::RankingStore, String> {
+    let mut store = rankings::load();
+    store.record(points);
+    rankings::save(&store)?;
+    Ok(store)
+}
+
+#[tauri::command]
 async fn windsor_query(
     params: windsor::QueryParams,
     state: State<'_, AppState>,
@@ -213,7 +243,11 @@ pub fn run() {
             trends_query,
             set_python_path,
             get_dashboard_layout,
-            set_dashboard_layout
+            set_dashboard_layout,
+            get_rankings,
+            track_keyword,
+            untrack_keyword,
+            record_rank_points
         ])
         .run(tauri::generate_context!())
         .expect("Adlytica kon niet starten");
