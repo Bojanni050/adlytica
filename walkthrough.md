@@ -21,3 +21,9 @@
 - Findings: het actieve menu-item was een vol amber vlak met donkere tekst. In het ontwerp staat het als amberkleurige tekst met een dun amber balkje links.
 - Conclusions: de ontwerpvariant leest rustiger in de zijbalk en houdt amber als accent in plaats van als groot vlak; de kleur van het item zelf blijft dus `--accent`, met alleen een lichte amber gloed als achtergrond.
 - Actions: `src/styles.css` (`.nav-item.active` nu `position: relative`, achtergrond `rgba(245, 158, 11, 0.1)`, kleur `var(--accent)`; nieuw `.nav-item.active::before` met een 3px amber balkje van 18px hoog, verticaal gecentreerd, links tegen de rand); de donkere tekstkleur `#1b1206` blijft staan voor de vlakke amber knoppen en tags. `npm run build` slaagt; validated in de browser: gecontroleerde stijlen van het actieve item zijn kleur `rgb(245, 158, 11)`, achtergrond `rgba(245, 158, 11, 0.1)` en een balkje van 3px.
+
+## 2026-10-19 (Ongebruikte store-dependency weg, widgets naar main)
+
+- Findings: `tauri-plugin-store = "2"` stond in `src-tauri/Cargo.toml`, maar niets gebruikte het: de configuratie gaat via eigen JSON-lees/schrijf in `config.rs`. Een ongebruikte dependency kost compileertijd en suggereert een opslaglaag die er niet is.
+- Conclusions: verwijderd in plaats van in gebruik genomen, want `config.rs` bewaart alles al op één plek en de dashboardindeling sluit daar nu bij aan. Daarna de hele wijziging (widgets, configuratieopslag, kleurenpalet) in één commit naar main gepusht.
+- Actions: `src-tauri/Cargo.toml` (regel `tauri-plugin-store` weg; `Cargo.lock` bijgewerkt door `cargo check`, dat slaagt); commit `5de4101` "Dashboard als losse widgets met eigen indeling en nieuw kleurenpalet" gepusht naar `origin/main`. `npm run build` en `cargo check` slagen; working tree schoon.
