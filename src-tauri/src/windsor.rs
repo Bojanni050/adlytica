@@ -1,14 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-const WINDSOR_API_URL: &str = "https://connectors.windsor.ai/api/v2/connector-management";
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct WindsorConfig {
-    pub api_key: String,
-    #[serde(default)]
-    pub accounts: HashMap<String, String>,
-}
+const WINDSOR_BASE_URL: &str = "https://connectors.windsor.ai";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QueryParams {
@@ -28,25 +20,23 @@ pub struct QueryResult {
 }
 
 #[derive(Debug)]
-pub struct WindsorError {
-    pub message: String,
-}
+pub struct WindsorError(pub String);
 
 impl std::fmt::Display for WindsorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
+        write!(f, "{}", self.0)
     }
 }
 
 impl From<reqwest::Error> for WindsorError {
     fn from(e: reqwest::Error) -> Self {
-        WindsorError { message: format!("Netwerkfout: {e}") }
+        WindsorError(format!("Netwerkfout: {e}"))
     }
 }
 
 impl From<serde_json::Error> for WindsorError {
     fn from(e: serde_json::Error) -> Self {
-        WindsorError { message: format!("Ongeldige API-reactie: {e}") }
+        WindsorError(format!("Ongeldige API-reactie: {e}"))
     }
 }
 
@@ -66,44 +56,58 @@ impl WindsorClient {
         }
     }
 
-    async fn post(&self, path: &str, body: &serde_json::Value) -> Result<reqwest::Response, WindsorError> {
-        let url = format!("{}/{}", WINDSOR_API_URL, path);
-        Ok(self
-            .http
-            .post(&url)
-            .query(&[("api_key", &self.api_key)])
-            .json(body)
-            .send()
-            .await?)
-    }
-
     pub async fn get_data(&self, p: &QueryParams) -> Result<QueryResult, WindsorError> {
-        let mut body = serde_json::json!({
-            "connector": p.connector,
-            "account": p.account,
-            "fields": p.fields,
-        });
+        let url = format!("{}/{}", WINDSOR_BASE_URL, p.connector);
+
+        let mut fields = p.fields.clone();
+        for g in &p.group_by {
+            if !fields.contains(g) {
+                fields.push(g.clone());
+            }
+        }
+
+        let mut query: Vec<(String, String)> = vec![
+            ("api_key".into(), self.api_key.clone()),
+            ("fields".into(), fields.join(",")),
+        ];
         if let Some(from) = &p.date_from {
-            body["date_from"] = serde_json::json!(from);
-            body["date_to"] = serde_json::json!(p.date_to.clone().unwrap_or_else(|| "today".into()));
+            query.push(("date_from".into(), from.clone()));
         }
-        if !p.group_by.is_empty() {
-            body["group_by"] = serde_json::json!(p.group_by);
+        if let Some(to) = &p.date_to {
+            query.push(("date_to".into(), to.clone()));
         }
-        if let Some(opts) = &p.options {
-            body["options"] = opts.clone();
+        if !p.account.trim().is_empty() {
+            query.push(("select_accounts".into(), p.account.trim().to_string()));
         }
         if let Some(limit) = p.limit {
-            body["limit"] = serde_json::json!(limit);
+            query.push(("_max_rows".into(), limit.to_string()));
+        }
+        if let Some(serde_json::Value::Object(opts)) = &p.options {
+            for (key, value) in opts {
+                let value_str = match value {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Bool(b) => b.to_string(),
+                    other => other.to_string(),
+                };
+                query.push((key.clone(), value_str));
+            }
         }
 
-        let resp = self.post("query", &body).await?;
+        let resp = self.http.get(&url).query(&query).send().await?;
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
         if !(200..300).contains(&status) {
-            return Err(WindsorError { message: format!("Windsor API-fout ({status}): {text}") });
+            let short = if text.len() > 400 { format!("{}…", &text[..400]) } else { text };
+            return Err(WindsorError(format!("Windsor API-fout ({status}): {short}")));
         }
+
         let parsed: serde_json::Value = serde_json::from_str(&text)?;
+        if parsed.get("error").is_some() {
+            return Err(WindsorError(format!(
+                "Windsor API-fout: {}",
+                parsed["error"]
+            )));
+        }
         let rows = parsed
             .get("data")
             .and_then(|d| d.as_array())
@@ -119,18 +123,26 @@ impl WindsorClient {
         action: &str,
         params: &serde_json::Value,
     ) -> Result<serde_json::Value, WindsorError> {
+        let url = format!("{}/{}/actions", WINDSOR_BASE_URL, connector);
         let body = serde_json::json!({
-            "connector": connector,
             "account": account,
             "action": action,
             "params": params,
         });
-        let resp = self.post("actions/execute", &body).await?;
+
+        let resp = self
+            .http
+            .post(&url)
+            .query(&[("api_key", self.api_key.as_str())])
+            .json(&body)
+            .send()
+            .await?;
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
         if !(200..300).contains(&status) {
-            return Err(WindsorError { message: format!("Windsor API-fout ({status}): {text}") });
+            let short = if text.len() > 400 { format!("{}…", &text[..400]) } else { text };
+            return Err(WindsorError(format!("Windsor API-fout ({status}): {short}")));
         }
-        Ok(serde_json::from_str(&text)?)
+        serde_json::from_str(&text)
     }
 }
