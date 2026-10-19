@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { setWindsorKey, setPythonPath } from "../lib/api";
+import { setWindsorKey, setPythonPath, setMistralConfig } from "../lib/api";
 
 interface Props {
   accounts: Record<string, string>;
@@ -12,6 +12,8 @@ export default function Settings({ accounts, onAccounts }: Props) {
   const [adsAccount, setAdsAccount] = useState(accounts.google_ads ?? "");
   const [ga4Account, setGa4Account] = useState(accounts.googleanalytics4 ?? "");
   const [pythonPath, setPythonPath] = useState("python3");
+  const [mistralKey, setMistralKey] = useState("");
+  const [mistralModel, setMistralModel] = useState("mistral-small-latest");
   const [status, setStatus] = useState<string | null>(null);
 
   async function save() {
@@ -24,6 +26,7 @@ export default function Settings({ accounts, onAccounts }: Props) {
         });
       }
       await setPythonPath(pythonPath);
+      await setMistralConfig(mistralKey.trim(), mistralModel);
       onAccounts({
         searchconsole: gscAccount,
         google_ads: adsAccount,
@@ -75,6 +78,28 @@ export default function Settings({ accounts, onAccounts }: Props) {
             <input type="text" value={ga4Account} onChange={(e) => setGa4Account(e.target.value)} />
           </div>
         </div>
+
+        <h3 style={{ marginTop: 20 }}>Adly (AI-assistent)</h3>
+        <div className="form-row">
+          <div>
+            <label className="field">Mistral API-key</label>
+            <input
+              type="password" value={mistralKey} onChange={(e) => setMistralKey(e.target.value)}
+              placeholder="Alleen invullen om te wijzigen"
+            />
+          </div>
+          <div>
+            <label className="field">Model</label>
+            <select value={mistralModel} onChange={(e) => setMistralModel(e.target.value)}>
+              <option value="mistral-small-latest">Mistral Small (snel, voordelig)</option>
+              <option value="mistral-medium-latest">Mistral Medium</option>
+              <option value="mistral-large-latest">Mistral Large (beste kwaliteit)</option>
+            </select>
+          </div>
+        </div>
+        <p className="hint">
+          Maak een API-key aan op console.mistral.ai. De sleutel blijft lokaal in de app.
+        </p>
 
         <h3 style={{ marginTop: 20 }}>Google Trends</h3>
         <div className="form-row">

@@ -42,6 +42,19 @@ export async function setPythonPath(python: string): Promise<void> {
   return invoke("set_python_path", { python });
 }
 
+export async function setMistralConfig(apiKey: string, model: string): Promise<void> {
+  return invoke("set_mistral_config", { apiKey, model });
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function adlyChat(messages: ChatMessage[], context?: string): Promise<string> {
+  return invoke("adly_chat", { messages, context: context ?? null });
+}
+
 export interface TrendsRequest {
   method: string;
   keywords: string[];

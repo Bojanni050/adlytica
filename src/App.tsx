@@ -6,15 +6,17 @@ import KeywordSearch from "./views/KeywordSearch";
 import SeoAnalysis from "./views/SeoAnalysis";
 import Campaigns from "./views/Campaigns";
 import Trends from "./views/Trends";
+import Adly from "./views/Adly";
 import Settings from "./views/Settings";
 
-type ViewId = "dashboard" | "keywords" | "seo" | "campaigns" | "trends" | "settings";
+type ViewId = "dashboard" | "keywords" | "seo" | "campaigns" | "adly" | "trends" | "settings";
 
 const NAV: { id: ViewId; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▤" },
   { id: "keywords", label: "Keyword Search", icon: "⌕" },
   { id: "seo", label: "SEO Analyse", icon: "◈" },
   { id: "campaigns", label: "Advertenties", icon: "◧" },
+  { id: "adly", label: "Adly AI", icon: "✦" },
   { id: "trends", label: "Google Trends", icon: "∿" },
   { id: "settings", label: "Instellingen", icon: "⚙" },
 ];
@@ -36,6 +38,7 @@ export default function App() {
     keywords: <KeywordSearch accounts={accounts} />,
     seo: <SeoAnalysis accounts={accounts} />,
     campaigns: <Campaigns accounts={accounts} />,
+    adly: <Adly accounts={accounts} />,
     trends: <Trends />,
     settings: <Settings accounts={accounts} onAccounts={setAccounts} />,
   };

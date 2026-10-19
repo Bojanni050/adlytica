@@ -9,6 +9,7 @@ Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Googl
 - **SEO Analyse** — best presterende pagina's, zoektermen per pagina en automatisch gedetecteerde kansen (positie 5–20)
 - **Advertenties** — campagne-overzicht (30 dagen, inclusief gepauzeerd), pauzeren/activeren en nieuwe campagnes + ad groups aanmaken
 - **Google Trends** — zoekinteresse over tijd en gerelateerde/opkomende zoektermen (via pytrends)
+- **Adly (AI-assistent)** — chat met je AI-collega voor SEO-advies en campagnehulp; verstuurt optioneel je actuele Search Console- en campagnedata mee voor data-gedreven antwoorden (Mistral API)
 
 ## Vereisten
 
@@ -16,6 +17,7 @@ Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Googl
 - Rust toolchain (rustup) — nodig voor Tauri
 - Python 3.9+ met `pytrends`: `pip install pytrends`
 - Een Windsor.ai-account met verbonden Google Analytics 4, Search Console en Google Ads connectors, en een API-key (Windsor.ai → Settings → API)
+- Voor Adly (AI): een Mistral API-key van console.mistral.ai
 
 ## Installatie
 

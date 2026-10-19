@@ -1,3 +1,4 @@
+mod adly;
 mod trends;
 mod windsor;
 
@@ -8,6 +9,8 @@ use tauri::{Manager, State};
 #[derive(Default)]
 pub struct AppState {
     pub windsor_api_key: Mutex<Option<String>>,
+    pub mistral_api_key: Mutex<Option<String>>,
+    pub mistral_model: Mutex<String>,
     pub accounts: Mutex<HashMap<String, String>>,
     pub trends: trends::TrendsState,
 }
@@ -30,6 +33,19 @@ async fn set_windsor_key(
 ) -> Result<(), String> {
     *state.windsor_api_key.lock().unwrap() = Some(key);
     *state.accounts.lock().unwrap() = accounts;
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_mistral_config(
+    api_key: String,
+    model: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if !api_key.trim().is_empty() {
+        *state.mistral_api_key.lock().unwrap() = Some(api_key);
+    }
+    *state.mistral_model.lock().unwrap() = model;
     Ok(())
 }
 
@@ -66,6 +82,27 @@ async fn windsor_action(
 }
 
 #[tauri::command]
+async fn adly_chat(
+    messages: Vec<adly::ChatMessage>,
+    context: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let key = state
+        .mistral_api_key
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "Geen Mistral API-key ingesteld. Ga naar Instellingen.".to_string())?;
+    let model = state.mistral_model.lock().unwrap().clone();
+    let client = adly::AdlyClient::new(key);
+    let system = adly::system_prompt(&context);
+    client
+        .chat(&model, &system, &messages)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn trends_query(
     req: trends::TrendsRequest,
     state: State<'_, AppState>,
@@ -95,6 +132,8 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
             windsor_api_key: Mutex::new(None),
+            mistral_api_key: Mutex::new(None),
+            mistral_model: Mutex::new("mistral-small-latest".into()),
             accounts: Mutex::new(HashMap::new()),
             trends: trends::TrendsState {
                 sidecar: Mutex::new(None),
@@ -103,9 +142,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             set_windsor_key,
+            set_mistral_config,
             get_accounts,
             windsor_query,
             windsor_action,
+            adly_chat,
             trends_query,
             set_python_path
         ])
