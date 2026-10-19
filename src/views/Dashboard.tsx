@@ -17,6 +17,10 @@ interface DashboardData {
   ga4: Row[];
   queries: Row[];
   pages: Row[];
+  /** Klikken per dag per pagina, voor de anomalie-widget. */
+  pageDaily: Row[];
+  /** Klikken per dag per zoekterm, voor de anomalie-widget. */
+  queryDaily: Row[];
 }
 
 type WidgetSpan = 2 | 3 | 4 | 6 | 12;
@@ -334,6 +338,100 @@ function TopQueries({ rows }: { rows: Row[] }) {
   );
 }
 
+const ANOMALY_WINDOW = 7;
+const ANOMALY_LOOKBACK = ANOMALY_WINDOW * 2 + 6;
+const ANOMALY_MIN_CLICKS = 5;
+const ANOMALY_MIN_DROP = 0.3;
+
+interface Anomaly {
+  key: string;
+  previous: number;
+  current: number;
+  drop: number;
+  position: number;
+}
+
+function findAnomalies(rows: Row[], field: "page" | "query"): Anomaly[] {
+  const dates = Array.from(new Set(rows.map((row) => String(row.date ?? "")).filter(Boolean))).sort();
+  if (dates.length < ANOMALY_WINDOW * 2) return [];
+
+  const day = 24 * 60 * 60 * 1000;
+  const latest = Date.parse(dates[dates.length - 1]);
+  if (!Number.isFinite(latest)) return [];
+  const currentStart = latest - (ANOMALY_WINDOW - 1) * day;
+  const previousStart = latest - (ANOMALY_WINDOW * 2 - 1) * day;
+
+  const buckets = new Map<string, { previous: number; current: number; weighted: number; weight: number }>();
+  for (const row of rows) {
+    const time = Date.parse(String(row.date ?? ""));
+    if (!Number.isFinite(time)) continue;
+    const key = String(row[field] ?? "").trim();
+    if (key === "") continue;
+    const clicks = num(row.clicks);
+    const bucket = buckets.get(key) ?? { previous: 0, current: 0, weighted: 0, weight: 0 };
+    if (time >= currentStart) {
+      bucket.current += clicks;
+      bucket.weighted += num(row.position) * clicks;
+      bucket.weight += clicks;
+    } else if (time >= previousStart) {
+      bucket.previous += clicks;
+    }
+    buckets.set(key, bucket);
+  }
+
+  const anomalies: Anomaly[] = [];
+  for (const [key, bucket] of buckets) {
+    if (bucket.previous < ANOMALY_MIN_CLICKS) continue;
+    const drop = (bucket.previous - bucket.current) / bucket.previous;
+    if (drop < ANOMALY_MIN_DROP) continue;
+    anomalies.push({
+      key,
+      previous: bucket.previous,
+      current: bucket.current,
+      drop,
+      position: bucket.weight > 0 ? bucket.weighted / bucket.weight : 0,
+    });
+  }
+
+  return anomalies
+    .sort((a, b) => b.previous - b.current - (a.previous - a.current))
+    .slice(0, 7);
+}
+
+function Anomalies({ rows, field }: { rows: Row[]; field: "page" | "query" }) {
+  const anomalies = findAnomalies(rows, field);
+  if (anomalies.length === 0) {
+    return <WidgetEmpty>Geen opvallende dalingen in de laatste 7 dagen.</WidgetEmpty>;
+  }
+
+  return (
+    <table className="widget-table">
+      <thead>
+        <tr>
+          <th>{field === "page" ? "Pagina" : "Zoekterm"}</th>
+          <th className="num">Vorige</th>
+          <th className="num">Nu</th>
+          <th className="num">Δ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {anomalies.map((item, index) => (
+          <tr key={`${item.key}-${index}`}>
+            <td className="ellipsis" title={item.key}>
+              {field === "page" ? pathLabel(item.key) : item.key}
+            </td>
+            <td className="num">{fmt(item.previous, 0)}</td>
+            <td className="num">{fmt(item.current, 0)}</td>
+            <td className="num">
+              <span className="badge red">−{fmt(item.drop * 100, 0)}%</span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function Opportunities({ rows }: { rows: Row[] }) {
   const opportunities = rows
     .filter((row) => num(row.position) >= 5 && num(row.position) <= 20 && num(row.impressions) > 100)
@@ -473,6 +571,22 @@ const WIDGETS: WidgetDef[] = [
     category: "Tabel",
     render: (data) => <Opportunities rows={data.queries} />,
   },
+  {
+    id: "anomaly-pages",
+    title: "Anomalieën — pagina's",
+    subtitle: "Week-op-week daling vanaf 30%",
+    span: 4,
+    category: "Tabel",
+    render: (data) => <Anomalies rows={data.pageDaily} field="page" />,
+  },
+  {
+    id: "anomaly-queries",
+    title: "Anomalieën — zoektermen",
+    subtitle: "Week-op-week daling vanaf 30%",
+    span: 4,
+    category: "Tabel",
+    render: (data) => <Anomalies rows={data.queryDaily} field="query" />,
+  },
 ];
 
 const WIDGET_IDS = WIDGETS.map((widget) => widget.id);
@@ -577,7 +691,7 @@ function WidgetFrame({
 }
 
 export default function Dashboard({ accounts }: Props) {
-  const [data, setData] = useState<DashboardData>({ gsc: [], ads: [], ga4: [], queries: [], pages: [] });
+  const [data, setData] = useState<DashboardData>({ gsc: [], ads: [], ga4: [], queries: [], pages: [], pageDaily: [], queryDaily: [] });
   const [loading, setLoading] = useState(true);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -628,7 +742,8 @@ export default function Dashboard({ accounts }: Props) {
       setLoading(true);
       setError(null);
       const from = dateNDaysAgo(rangeDays - 1);
-      const [gsc, ads, ga4, queries, pages] = await Promise.all([
+      const anomalyFrom = dateNDaysAgo(ANOMALY_LOOKBACK - 1);
+      const [gsc, ads, ga4, queries, pages, pageDaily, queryDaily] = await Promise.all([
         safeQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["date", "clicks", "impressions", "ctr", "position"],
@@ -654,9 +769,19 @@ export default function Dashboard({ accounts }: Props) {
           fields: ["page", "clicks", "impressions", "ctr", "position"],
           date_from: from, group_by: ["page"], limit: 500,
         }),
+        safeQuery({
+          connector: "searchconsole", account: accounts.searchconsole,
+          fields: ["date", "page", "clicks", "position"],
+          date_from: anomalyFrom, group_by: ["date", "page"], limit: 5000,
+        }),
+        safeQuery({
+          connector: "searchconsole", account: accounts.searchconsole,
+          fields: ["date", "query", "clicks", "position"],
+          date_from: anomalyFrom, group_by: ["date", "query"], limit: 5000,
+        }),
       ]);
       if (cancelled) return;
-      setData({ gsc, ads, ga4, queries, pages });
+      setData({ gsc, ads, ga4, queries, pages, pageDaily, queryDaily });
       setError(errors.length > 0 ? errors[0] : null);
       setUpdatedAt(new Date());
       setLoading(false);
