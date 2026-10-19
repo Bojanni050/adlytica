@@ -1,0 +1,9 @@
+[package]
+name = "adlytica-trends"
+version = "0.1.0"
+description = "Python-omgeving voor de Adlytica Google Trends sidecar"
+requires-python = ">=3.9"
+
+[dependencies]
+pytrends = ">=4.9.2"
+pandas = ">=2.0"
