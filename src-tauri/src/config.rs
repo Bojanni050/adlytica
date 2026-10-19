@@ -19,6 +19,13 @@ pub struct AppConfig {
     /// Volgorde en verborgen widgets van het dashboard, zoals de frontend ze aanlevert.
     #[serde(default)]
     pub dashboard_layout: Option<serde_json::Value>,
+    /// WordPress-site voor de Rank Math-koppeling, bijv. https://white-vision.nl.
+    #[serde(default)]
+    pub wp_url: Option<String>,
+    #[serde(default)]
+    pub wp_user: Option<String>,
+    #[serde(default)]
+    pub wp_app_password: Option<String>,
 }
 
 fn default_mistral_model() -> String {
@@ -38,6 +45,9 @@ impl Default for AppConfig {
             accounts: HashMap::new(),
             python_path: default_python_path(),
             dashboard_layout: None,
+            wp_url: None,
+            wp_user: None,
+            wp_app_password: None,
         }
     }
 }

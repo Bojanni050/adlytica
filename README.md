@@ -7,7 +7,7 @@ Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Googl
 - **Dashboard** — samenvatting en dagelijkse trends uit GA4, Search Console en Google Ads over 7, 30, 90 of 180 dagen, met periodevergelijking; de kaarten zijn losse widgets die je zelf verplaatst, verbergt en weer aanzet
 - **Keyword Search** — eigen zoektermen uit Search Console (klikken, impressies, CTR, positie) én Keyword Planner-ideeën uit Google Ads (volume, competitie, biedranges)
 - **Posities** — volg zoektermen en zie hun Search Console-positie per dag als grafiek, met weekdaling/stijging en een sparkline per term; historie wordt lokaal bewaard in `rankings.json`
-- **SEO Analyse** — best presterende pagina's, zoektermen per pagina en automatisch gedetecteerde kansen (positie 5–20)
+- **SEO Analyse** — best presterende pagina's, zoektermen per pagina en automatisch gedetecteerde kansen (positie 5–20); per pagina opent de knop **Rank Math** een paneel waarin je de SEO-titel en meta-omschrijving bekijkt en direct naar WordPress wegschrijft
 - **Advertenties** — campagne-overzicht (30 dagen, inclusief gepauzeerd), pauzeren/activeren en nieuwe campagnes + ad groups aanmaken
 - **Google Trends** — zoekinteresse over tijd en gerelateerde/opkomende zoektermen (via pytrends)
 - **Adly (AI-assistent)** — chat met je AI-collega voor SEO-advies en campagnehulp; verstuurt optioneel je actuele Search Console- en campagnedata mee voor data-gedreven antwoorden (Mistral API)
@@ -19,6 +19,7 @@ Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Googl
 - Python 3.9+ met `pytrends`: `pip install pytrends`
 - Een Windsor.ai-account met verbonden Google Analytics 4, Search Console en Google Ads connectors, en een API-key (Windsor.ai → Settings → API)
 - Voor Adly (AI): een Mistral API-key van console.mistral.ai
+- Voor de WordPress/Rank Math-koppeling: een WordPress-gebruiker met redactierechten en een **applicatiewachtwoord** (Gebruikers → Profiel → Applicatiewachtwoorden). Je gebruikersnaam is je inlognaam, niet je e-mailadres.
 
 ## Installatie
 
@@ -44,15 +45,16 @@ npm run tauri build  # productiebuild (.deb/.msi/.app)
 
 1. Ga naar **Instellingen** en vul je Windsor.ai API-key in (accounts worden vooringesteld maar kunnen daar aangepast worden).
 2. Zorg dat `python3` (of het pad naar je Python) beschikbaar is voor de Trends-sidecar.
+3. Voor de Rank Math-koppeling: vul bij **WordPress (Rank Math)** de site-URL, gebruikersnaam en het applicatiewachtwoord in en klik op **Verbinding testen**. Daarna schrijf je vanuit SEO Analyse per pagina de titel en meta-omschrijving weg naar WordPress.
 
 ## Structuur
 
 ```
 src/                  React-frontend (views, components, lib)
-src-tauri/src/        Rust-backend: windsor.rs (API-client), trends.rs (sidecar), lib.rs (Tauri-commando's)
+src-tauri/src/        Rust-backend: windsor.rs (API-client), wordpress.rs (Rank Math via WP-REST), rankings.rs (positiehistorie), trends.rs (sidecar), config.rs (config.json), lib.rs (Tauri-commando's)
 src-tauri/trends_sidecar.py  Python JSON-over-stdin sidecar voor pytrends
 ```
 
 ## Beveiliging
 
-De API-key blijft lokaal in de app; alle calls gaan direct naar `connectors.windsor.ai`. Er worden geen gegevens gedeeld met derden.
+De API-key blijft lokaal in de app; alle calls gaan direct naar `connectors.windsor.ai`. Er worden geen gegevens gedeeld met derden. Hetzelfde geldt voor de WordPress-gegevens: gebruikersnaam en applicatiewachtwoord worden lokaal in `config.json` bewaard en alleen gebruikt voor calls naar je eigen site.

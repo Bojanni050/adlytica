@@ -85,10 +85,50 @@ export interface SettingsStatus {
   accounts: Record<string, string>;
   python_path: string;
   config_path: string | null;
+  wp_url: string | null;
+  wp_user: string | null;
+  wp_password_set: boolean;
 }
 
 export async function getSettingsStatus(): Promise<SettingsStatus> {
   return invoke("get_settings_status");
+}
+
+export async function setWordpressConfig(
+  url: string,
+  user: string,
+  password: string,
+): Promise<void> {
+  return invoke("set_wordpress_config", { url, user, password });
+}
+
+/** Controleert de WordPress-verbinding en geeft de sitenaam terug. */
+export async function testWordpress(): Promise<string> {
+  return invoke("test_wordpress");
+}
+
+export interface WpSeo {
+  id: number;
+  post_type: string;
+  permalink: string;
+  title: string;
+  description: string;
+  focus_keyword: string;
+}
+
+/** Zoekt de pagina bij een URL en leest de Rank Math-velden. */
+export async function getWpSeo(url: string): Promise<WpSeo> {
+  return invoke("get_wp_seo", { url });
+}
+
+/** Schrijft titel en description naar Rank Math. */
+export async function setWpSeo(
+  kind: string,
+  id: number,
+  title: string,
+  description: string,
+): Promise<WpSeo> {
+  return invoke("set_wp_seo", { kind, id, title, description });
 }
 
 export async function setMistralConfig(apiKey: string, model: string): Promise<void> {

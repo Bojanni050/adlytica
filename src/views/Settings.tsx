@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { setWindsorKey, setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus } from "../lib/api";
+import {
+  setWindsorKey, setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
+  setWordpressConfig, testWordpress,
+} from "../lib/api";
 
 interface Props {
   accounts: Record<string, string>;
@@ -14,6 +17,10 @@ export default function Settings({ accounts, onAccounts }: Props) {
   const [pythonPath, setPythonPath] = useState("python3");
   const [mistralKey, setMistralKey] = useState("");
   const [mistralModel, setMistralModel] = useState("mistral-small-latest");
+  const [wpUrl, setWpUrl] = useState("");
+  const [wpUser, setWpUser] = useState("");
+  const [wpPassword, setWpPassword] = useState("");
+  const [wpTest, setWpTest] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [saved, setSaved] = useState<SettingsStatus | null>(null);
 
@@ -25,6 +32,8 @@ export default function Settings({ accounts, onAccounts }: Props) {
       if (st.accounts.googleanalytics4) setGa4Account(st.accounts.googleanalytics4);
       setMistralModel(st.mistral_model);
       setPythonPath(st.python_path);
+      if (st.wp_url) setWpUrl(st.wp_url);
+      if (st.wp_user) setWpUser(st.wp_user);
     }).catch(() => undefined);
   }, []);
 
@@ -39,6 +48,7 @@ export default function Settings({ accounts, onAccounts }: Props) {
       }
       await setPythonPath(pythonPath);
       await setMistralConfig(mistralKey.trim(), mistralModel);
+      await setWordpressConfig(wpUrl.trim(), wpUser.trim(), wpPassword.trim());
       onAccounts({
         searchconsole: gscAccount,
         google_ads: adsAccount,
@@ -47,6 +57,18 @@ export default function Settings({ accounts, onAccounts }: Props) {
       setStatus("Instellingen opgeslagen.");
     } catch (e) {
       setStatus(`Fout: ${e}`);
+    }
+  }
+
+  async function testWp() {
+    setWpTest("Verbinden…");
+    try {
+      // Eerst opslaan, zodat de test met de ingevulde gegevens werkt.
+      await setWordpressConfig(wpUrl.trim(), wpUser.trim(), wpPassword.trim());
+      const name = await testWordpress();
+      setWpTest(`✓ Verbonden met ${name}`);
+    } catch (e) {
+      setWpTest(`✗ ${e}`);
     }
   }
 
@@ -132,6 +154,45 @@ export default function Settings({ accounts, onAccounts }: Props) {
         <p className="hint">
           Installeer eerst: <code>pip install pytrends</code>
         </p>
+
+        <h3 style={{ marginTop: 20 }}>WordPress (Rank Math)</h3>
+        <div className="form-row">
+          <div>
+            <label className="field">Site-URL</label>
+            <input
+              type="text" value={wpUrl} onChange={(e) => setWpUrl(e.target.value)}
+              placeholder="https://white-vision.nl"
+            />
+          </div>
+        </div>
+        <div className="form-row">
+          <div>
+            <label className="field">Gebruikersnaam</label>
+            <input
+              type="text" value={wpUser} onChange={(e) => setWpUser(e.target.value)}
+              placeholder="WordPress-gebruikersnaam (niet je e-mailadres)"
+            />
+          </div>
+          <div>
+            <label className="field">
+              Applicatiewachtwoord {saved?.wp_password_set ? "— ✓ opgeslagen (laat leeg om te behouden)" : ""}
+            </label>
+            <input
+              type="password" value={wpPassword} onChange={(e) => setWpPassword(e.target.value)}
+              placeholder={saved?.wp_password_set ? "•••••••• (opgeslagen)" : "xxxx xxxx xxxx xxxx"}
+            />
+          </div>
+        </div>
+        <p className="hint">
+          Maak een applicatiewachtwoord aan in WordPress onder Gebruikers → Profiel →
+          Applicatiewachtwoorden. Daarmee kan Adlytica Rank Math-titels en -omschrijvingen van
+          pagina's aanpassen, zonder je gewone wachtwoord te gebruiken. De gegevens blijven lokaal
+          in de app.
+        </p>
+        <div className="form-row">
+          <button className="ghost" onClick={testWp}>Verbinding testen</button>
+          {wpTest && <span className="hint" style={{ alignSelf: "center" }}>{wpTest}</span>}
+        </div>
 
         <div style={{ marginTop: 20 }}>
           <button className="primary" onClick={save}>Opslaan</button>

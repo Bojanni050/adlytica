@@ -3,6 +3,7 @@ mod config;
 mod rankings;
 mod trends;
 mod windsor;
+mod wordpress;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -15,6 +16,9 @@ pub struct AppState {
     pub mistral_model: Mutex<String>,
     pub accounts: Mutex<HashMap<String, String>>,
     pub dashboard_layout: Mutex<Option<serde_json::Value>>,
+    pub wp_url: Mutex<Option<String>>,
+    pub wp_user: Mutex<Option<String>>,
+    pub wp_app_password: Mutex<Option<String>>,
     pub trends: trends::TrendsState,
 }
 
@@ -26,6 +30,9 @@ fn persist(state: &AppState) {
         accounts: state.accounts.lock().unwrap().clone(),
         python_path: state.trends.python.lock().unwrap().clone(),
         dashboard_layout: state.dashboard_layout.lock().unwrap().clone(),
+        wp_url: state.wp_url.lock().unwrap().clone(),
+        wp_user: state.wp_user.lock().unwrap().clone(),
+        wp_app_password: state.wp_app_password.lock().unwrap().clone(),
     };
     if let Err(e) = config::save(&cfg) {
         eprintln!("Config niet opgeslagen: {e}");
@@ -40,6 +47,9 @@ pub struct SettingsStatus {
     pub accounts: HashMap<String, String>,
     pub python_path: String,
     pub config_path: Option<String>,
+    pub wp_url: Option<String>,
+    pub wp_user: Option<String>,
+    pub wp_password_set: bool,
 }
 
 fn windsor_client(state: &AppState) -> Result<windsor::WindsorClient, String> {
@@ -92,6 +102,9 @@ async fn get_settings_status(state: State<'_, AppState>) -> Result<SettingsStatu
         accounts: state.accounts.lock().unwrap().clone(),
         python_path: state.trends.python.lock().unwrap().clone(),
         config_path: config::config_path().map(|p| p.to_string_lossy().into_owned()),
+        wp_url: state.wp_url.lock().unwrap().clone(),
+        wp_user: state.wp_user.lock().unwrap().clone(),
+        wp_password_set: state.wp_app_password.lock().unwrap().is_some(),
     })
 }
 
@@ -110,6 +123,73 @@ async fn set_dashboard_layout(
     *state.dashboard_layout.lock().unwrap() = layout;
     persist(&state);
     Ok(())
+}
+
+#[tauri::command]
+async fn set_wordpress_config(
+    url: String,
+    user: String,
+    password: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let url = url.trim().trim_end_matches('/').to_string();
+    let user = user.trim().to_string();
+    *state.wp_url.lock().unwrap() = if url.is_empty() { None } else { Some(url) };
+    *state.wp_user.lock().unwrap() = if user.is_empty() { None } else { Some(user) };
+    // Net als bij de Mistral-key: leeg laten betekent "bestaand wachtwoord behouden".
+    if !password.trim().is_empty() {
+        *state.wp_app_password.lock().unwrap() = Some(password.trim().to_string());
+    }
+    persist(&state);
+    Ok(())
+}
+
+fn wordpress_client(state: &AppState) -> Result<wordpress::WordpressClient, String> {
+    let url = state.wp_url.lock().unwrap().clone().unwrap_or_default();
+    let user = state.wp_user.lock().unwrap().clone().unwrap_or_default();
+    let password = state.wp_app_password.lock().unwrap().clone().unwrap_or_default();
+    if url.trim().is_empty() || user.trim().is_empty() || password.trim().is_empty() {
+        return Err(
+            "WordPress is nog niet ingesteld. Vul de site-URL, gebruikersnaam en een \
+             applicatiewachtwoord in bij Instellingen."
+                .into(),
+        );
+    }
+    Ok(wordpress::WordpressClient::new(url, user, password))
+}
+
+#[tauri::command]
+async fn test_wordpress(state: State<'_, AppState>) -> Result<String, String> {
+    let client = wordpress_client(&state)?;
+    client.ping().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_wp_seo(
+    url: String,
+    state: State<'_, AppState>,
+) -> Result<wordpress::WpSeo, String> {
+    let client = wordpress_client(&state)?;
+    let target = client.find_page(&url).await.map_err(|e| e.to_string())?;
+    client
+        .get_seo(&target.post_type, target.id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn set_wp_seo(
+    kind: String,
+    id: u64,
+    title: String,
+    description: String,
+    state: State<'_, AppState>,
+) -> Result<wordpress::WpSeo, String> {
+    let client = wordpress_client(&state)?;
+    client
+        .set_seo(&kind, id, &title, &description)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -226,6 +306,9 @@ pub fn run() {
                 mistral_model: Mutex::new(cfg.mistral_model),
                 accounts: Mutex::new(cfg.accounts),
                 dashboard_layout: Mutex::new(cfg.dashboard_layout),
+                wp_url: Mutex::new(cfg.wp_url),
+                wp_user: Mutex::new(cfg.wp_user),
+                wp_app_password: Mutex::new(cfg.wp_app_password),
                 trends: trends::TrendsState {
                     sidecar: Mutex::new(None),
                     python: Mutex::new(cfg.python_path),
@@ -247,7 +330,11 @@ pub fn run() {
             get_rankings,
             track_keyword,
             untrack_keyword,
-            record_rank_points
+            record_rank_points,
+            set_wordpress_config,
+            test_wordpress,
+            get_wp_seo,
+            set_wp_seo
         ])
         .run(tauri::generate_context!())
         .expect("Adlytica kon niet starten");
