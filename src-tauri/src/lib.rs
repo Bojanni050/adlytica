@@ -1,4 +1,5 @@
 mod adly;
+mod config;
 mod trends;
 mod windsor;
 
@@ -13,6 +14,29 @@ pub struct AppState {
     pub mistral_model: Mutex<String>,
     pub accounts: Mutex<HashMap<String, String>>,
     pub trends: trends::TrendsState,
+}
+
+fn persist(state: &AppState) {
+    let cfg = config::AppConfig {
+        windsor_api_key: state.windsor_api_key.lock().unwrap().clone(),
+        mistral_api_key: state.mistral_api_key.lock().unwrap().clone(),
+        mistral_model: state.mistral_model.lock().unwrap().clone(),
+        accounts: state.accounts.lock().unwrap().clone(),
+        python_path: state.trends.python.lock().unwrap().clone(),
+    };
+    if let Err(e) = config::save(&cfg) {
+        eprintln!("Config niet opgeslagen: {e}");
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct SettingsStatus {
+    pub windsor_key_set: bool,
+    pub mistral_key_set: bool,
+    pub mistral_model: String,
+    pub accounts: HashMap<String, String>,
+    pub python_path: String,
+    pub config_path: Option<String>,
 }
 
 fn windsor_client(state: &AppState) -> Result<windsor::WindsorClient, String> {
@@ -33,6 +57,7 @@ async fn set_windsor_key(
 ) -> Result<(), String> {
     *state.windsor_api_key.lock().unwrap() = Some(key);
     *state.accounts.lock().unwrap() = accounts;
+    persist(&state);
     Ok(())
 }
 
@@ -46,12 +71,25 @@ async fn set_mistral_config(
         *state.mistral_api_key.lock().unwrap() = Some(api_key);
     }
     *state.mistral_model.lock().unwrap() = model;
+    persist(&state);
     Ok(())
 }
 
 #[tauri::command]
 async fn get_accounts(state: State<'_, AppState>) -> Result<HashMap<String, String>, String> {
     Ok(state.accounts.lock().unwrap().clone())
+}
+
+#[tauri::command]
+async fn get_settings_status(state: State<'_, AppState>) -> Result<SettingsStatus, String> {
+    Ok(SettingsStatus {
+        windsor_key_set: state.windsor_api_key.lock().unwrap().is_some(),
+        mistral_key_set: state.mistral_api_key.lock().unwrap().is_some(),
+        mistral_model: state.mistral_model.lock().unwrap().clone(),
+        accounts: state.accounts.lock().unwrap().clone(),
+        python_path: state.trends.python.lock().unwrap().clone(),
+        config_path: config::config_path().map(|p| p.to_string_lossy().into_owned()),
+    })
 }
 
 #[tauri::command]
@@ -124,25 +162,30 @@ async fn trends_query(
 #[tauri::command]
 async fn set_python_path(python: String, state: State<'_, AppState>) -> Result<(), String> {
     *state.trends.python.lock().unwrap() = python;
+    persist(&state);
     Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(AppState {
-            windsor_api_key: Mutex::new(None),
-            mistral_api_key: Mutex::new(None),
-            mistral_model: Mutex::new("mistral-small-latest".into()),
-            accounts: Mutex::new(HashMap::new()),
-            trends: trends::TrendsState {
-                sidecar: Mutex::new(None),
-                python: Mutex::new("python3".into()),
-            },
+        .manage({
+            let cfg = config::load();
+            AppState {
+                windsor_api_key: Mutex::new(cfg.windsor_api_key),
+                mistral_api_key: Mutex::new(cfg.mistral_api_key),
+                mistral_model: Mutex::new(cfg.mistral_model),
+                accounts: Mutex::new(cfg.accounts),
+                trends: trends::TrendsState {
+                    sidecar: Mutex::new(None),
+                    python: Mutex::new(cfg.python_path),
+                },
+            }
         })
         .invoke_handler(tauri::generate_handler![
             set_windsor_key,
             set_mistral_config,
+            get_settings_status,
             get_accounts,
             windsor_query,
             windsor_action,

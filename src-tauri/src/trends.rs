@@ -17,12 +17,6 @@ impl std::fmt::Display for TrendsError {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct TrendsPoint {
-    pub date: String,
-    pub values: std::collections::HashMap<String, Option<i64>>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 pub struct TrendsRequest {
     pub method: String,
     pub keywords: Vec<String>,

@@ -42,6 +42,19 @@ export async function setPythonPath(python: string): Promise<void> {
   return invoke("set_python_path", { python });
 }
 
+export interface SettingsStatus {
+  windsor_key_set: boolean;
+  mistral_key_set: boolean;
+  mistral_model: string;
+  accounts: Record<string, string>;
+  python_path: string;
+  config_path: string | null;
+}
+
+export async function getSettingsStatus(): Promise<SettingsStatus> {
+  return invoke("get_settings_status");
+}
+
 export async function setMistralConfig(apiKey: string, model: string): Promise<void> {
   return invoke("set_mistral_config", { apiKey, model });
 }

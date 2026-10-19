@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { setWindsorKey, setPythonPath, setMistralConfig } from "../lib/api";
+import React, { useEffect, useState } from "react";
+import { setWindsorKey, setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus } from "../lib/api";
 
 interface Props {
   accounts: Record<string, string>;
@@ -15,6 +15,18 @@ export default function Settings({ accounts, onAccounts }: Props) {
   const [mistralKey, setMistralKey] = useState("");
   const [mistralModel, setMistralModel] = useState("mistral-small-latest");
   const [status, setStatus] = useState<string | null>(null);
+  const [saved, setSaved] = useState<SettingsStatus | null>(null);
+
+  useEffect(() => {
+    getSettingsStatus().then((st) => {
+      setSaved(st);
+      if (st.accounts.searchconsole) setGscAccount(st.accounts.searchconsole);
+      if (st.accounts.google_ads) setAdsAccount(st.accounts.google_ads);
+      if (st.accounts.googleanalytics4) setGa4Account(st.accounts.googleanalytics4);
+      setMistralModel(st.mistral_model);
+      setPythonPath(st.python_path);
+    }).catch(() => undefined);
+  }, []);
 
   async function save() {
     try {
@@ -44,15 +56,22 @@ export default function Settings({ accounts, onAccounts }: Props) {
       <p className="subtitle">Windsor.ai en accountconfiguratie</p>
 
       {status && <div className="card" style={{ marginBottom: 16, borderColor: "var(--accent)" }}>{status}</div>}
+      {saved?.config_path && (
+        <p className="hint" style={{ marginBottom: 16 }}>
+          Instellingen worden bewaard in: {saved.config_path}
+        </p>
+      )}
 
       <div className="card">
         <h3>Windsor.ai API</h3>
         <div className="form-row">
           <div>
-            <label className="field">API-key</label>
+            <label className="field">
+              API-key {saved?.windsor_key_set ? "— ✓ opgeslagen (laat leeg om te behouden)" : ""}
+            </label>
             <input
               type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Alleen invullen om te wijzigen"
+              placeholder={saved?.windsor_key_set ? "•••••••• (opgeslagen)" : "Voer je API-key in"}
             />
           </div>
         </div>
@@ -82,10 +101,12 @@ export default function Settings({ accounts, onAccounts }: Props) {
         <h3 style={{ marginTop: 20 }}>Adly (AI-assistent)</h3>
         <div className="form-row">
           <div>
-            <label className="field">Mistral API-key</label>
+            <label className="field">
+              Mistral API-key {saved?.mistral_key_set ? "— ✓ opgeslagen (laat leeg om te behouden)" : ""}
+            </label>
             <input
               type="password" value={mistralKey} onChange={(e) => setMistralKey(e.target.value)}
-              placeholder="Alleen invullen om te wijzigen"
+              placeholder={saved?.mistral_key_set ? "•••••••• (opgeslagen)" : "Voer je API-key in"}
             />
           </div>
           <div>
