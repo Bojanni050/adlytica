@@ -4,7 +4,7 @@ mod windsor;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::State;
 
 #[derive(Default)]
 pub struct AppState {

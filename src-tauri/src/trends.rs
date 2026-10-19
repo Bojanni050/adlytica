@@ -88,6 +88,7 @@ impl TrendsSidecar {
     }
 }
 
+#[derive(Default)]
 pub struct TrendsState {
     pub sidecar: Mutex<Option<TrendsSidecar>>,
     pub python: Mutex<String>,
