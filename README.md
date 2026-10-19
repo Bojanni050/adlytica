@@ -11,6 +11,7 @@ Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Googl
 - **Cannibalisatie** — widget die zoektermen toont waar meerdere pagina's samen vertoningen pakken (minstens 200 vertoningen, en de tweede pagina haalt minstens 15% van de eerste), met per pagina de positie als pil (mint voor top 3, amber voor pagina 1), gesorteerd op totale vertoningen
 - **SEO Analyse** — best presterende pagina's, zoektermen per pagina en automatisch gedetecteerde kansen (positie 5–20); per pagina opent de knop **Rank Math** een paneel waarin je de SEO-titel en meta-omschrijving bekijkt en direct naar WordPress wegschrijft
 - **Advertenties** — campagne-overzicht (30 dagen, inclusief gepauzeerd), pauzeren/activeren en nieuwe campagnes + ad groups aanmaken
+- **Zoektermen** — zoektermen uit Google Ads met kosten en conversies, beoordeeld als negative-kandidaat (minimaal €1 kosten en nul conversies); vink ze aan en push ze per campagne als negative keyword (broad, phrase of exact), of kopieer de lijst voor handmatige invoer
 - **Google Trends** — zoekinteresse over tijd en gerelateerde/opkomende zoektermen (via pytrends)
 - **Adly (AI-assistent)** — chat met je AI-collega voor SEO-advies en campagnehulp; verstuurt optioneel je actuele Search Console- en campagnedata mee voor data-gedreven antwoorden (Mistral API)
 
