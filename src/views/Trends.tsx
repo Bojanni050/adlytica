@@ -79,12 +79,12 @@ export default function Trends() {
           <h3>Zoekinteresse (0–100)</h3>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={chartData}>
-              <XAxis dataKey="date" stroke="#8b96ab" fontSize={11} />
-              <YAxis stroke="#8b96ab" fontSize={11} domain={[0, 100]} />
-              <Tooltip contentStyle={{ background: "#1d2740", border: "1px solid #2a3550" }} />
+              <XAxis dataKey="date" stroke="#8b98a8" fontSize={11} />
+              <YAxis stroke="#8b98a8" fontSize={11} domain={[0, 100]} />
+              <Tooltip contentStyle={{ background: "#151b23", border: "1px solid #273140" }} />
               <Legend />
               {kwList.map((kw, i) => (
-                <Line key={kw} type="monotone" dataKey={kw} stroke={["#4f8cff", "#35d0a5", "#ffb35c", "#ff6b6b", "#b47dff"][i % 5]} strokeWidth={2} dot={false} connectNulls />
+                <Line key={kw} type="monotone" dataKey={kw} stroke={["#f59e0b", "#10b981", "#fbbf24", "#f87171", "#34d399"][i % 5]} strokeWidth={2} dot={false} connectNulls />
               ))}
             </LineChart>
           </ResponsiveContainer>

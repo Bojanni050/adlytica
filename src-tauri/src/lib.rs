@@ -13,6 +13,7 @@ pub struct AppState {
     pub mistral_api_key: Mutex<Option<String>>,
     pub mistral_model: Mutex<String>,
     pub accounts: Mutex<HashMap<String, String>>,
+    pub dashboard_layout: Mutex<Option<serde_json::Value>>,
     pub trends: trends::TrendsState,
 }
 
@@ -23,6 +24,7 @@ fn persist(state: &AppState) {
         mistral_model: state.mistral_model.lock().unwrap().clone(),
         accounts: state.accounts.lock().unwrap().clone(),
         python_path: state.trends.python.lock().unwrap().clone(),
+        dashboard_layout: state.dashboard_layout.lock().unwrap().clone(),
     };
     if let Err(e) = config::save(&cfg) {
         eprintln!("Config niet opgeslagen: {e}");
@@ -90,6 +92,23 @@ async fn get_settings_status(state: State<'_, AppState>) -> Result<SettingsStatu
         python_path: state.trends.python.lock().unwrap().clone(),
         config_path: config::config_path().map(|p| p.to_string_lossy().into_owned()),
     })
+}
+
+#[tauri::command]
+async fn get_dashboard_layout(
+    state: State<'_, AppState>,
+) -> Result<Option<serde_json::Value>, String> {
+    Ok(state.dashboard_layout.lock().unwrap().clone())
+}
+
+#[tauri::command]
+async fn set_dashboard_layout(
+    layout: Option<serde_json::Value>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    *state.dashboard_layout.lock().unwrap() = layout;
+    persist(&state);
+    Ok(())
 }
 
 #[tauri::command]
@@ -176,6 +195,7 @@ pub fn run() {
                 mistral_api_key: Mutex::new(cfg.mistral_api_key),
                 mistral_model: Mutex::new(cfg.mistral_model),
                 accounts: Mutex::new(cfg.accounts),
+                dashboard_layout: Mutex::new(cfg.dashboard_layout),
                 trends: trends::TrendsState {
                     sidecar: Mutex::new(None),
                     python: Mutex::new(cfg.python_path),
@@ -191,7 +211,9 @@ pub fn run() {
             windsor_action,
             adly_chat,
             trends_query,
-            set_python_path
+            set_python_path,
+            get_dashboard_layout,
+            set_dashboard_layout
         ])
         .run(tauri::generate_context!())
         .expect("Adlytica kon niet starten");

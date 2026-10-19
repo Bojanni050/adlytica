@@ -42,6 +42,14 @@ export async function setPythonPath(python: string): Promise<void> {
   return invoke("set_python_path", { python });
 }
 
+export async function getDashboardLayout(): Promise<unknown> {
+  return invoke("get_dashboard_layout");
+}
+
+export async function setDashboardLayout(layout: unknown): Promise<void> {
+  return invoke("set_dashboard_layout", { layout: layout ?? null });
+}
+
 export interface SettingsStatus {
   windsor_key_set: boolean;
   mistral_key_set: boolean;
