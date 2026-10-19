@@ -1,23 +1,66 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  adlyChat, windsorQuery, num, dateNDaysAgo, ChatMessage,
+  adlyChat, windsorAction, windsorQuery, num, dateNDaysAgo, ChatMessage,
 } from "../lib/api";
 
 interface Props { accounts: Record<string, string>; }
 
+interface AdlyAction {
+  action: string;
+  label: string;
+  params: Record<string, unknown>;
+}
+
 interface UIMessage extends ChatMessage {
   id: number;
+  executedActions?: string[];
 }
+
+const STORAGE_KEY = "adlytica.chat.history.v1";
 
 const SUGGESTIONS = [
   "Analyseer mijn SEO-kansen en geef top 5 prioriteiten",
   "Ontwerp een nieuwe Search-campagne voor white-vision.nl",
-  "Hoe kan ik mijn CTR op zoektermen met positie 5-10 verbeteren?",
+  "Pauzeer de slechtst presterende campagne",
   "Bekijk mijn campagneprestaties en geef optimalisatietips",
 ];
 
+function loadHistory(): UIMessage[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(messages: UIMessage[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-100)));
+  } catch {
+    /* opslag vol of niet beschikbaar */
+  }
+}
+
+function parseAction(text: string): { action: AdlyAction; rest: string } | null {
+  const match = text.match(/\[\[ACTION\]\]\s*(\{.*\})/);
+  if (!match) return null;
+  try {
+    const obj = JSON.parse(match[1]);
+    if (typeof obj.action !== "string" || typeof obj.params !== "object") return null;
+    return {
+      action: { action: obj.action, label: obj.label ?? obj.action, params: obj.params },
+      rest: text.replace(match[0], "").trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function Adly({ accounts }: Props) {
-  const [messages, setMessages] = useState<UIMessage[]>([]);
+  const [messages, setMessages] = useState<UIMessage[]>(loadHistory);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [withContext, setWithContext] = useState(true);
@@ -39,8 +82,8 @@ export default function Adly({ accounts }: Props) {
         }),
         windsorQuery({
           connector: "google_ads", account: accounts.google_ads,
-          fields: ["campaign_name", "status", "spend", "clicks", "impressions", "conversions"],
-          date_from: dateNDaysAgo(29), group_by: ["campaign_name"], limit: 200,
+          fields: ["campaign_id", "campaign_name", "status", "spend", "clicks", "impressions", "conversions"],
+          date_from: dateNDaysAgo(29), group_by: ["campaign_id"], limit: 200,
           options: { include_inactive: "true" },
         }),
       ]);
@@ -59,18 +102,61 @@ export default function Adly({ accounts }: Props) {
         .join("\n");
 
       const campaigns = ads
-        .map((r) => `${r.campaign_name} | status ${r.status} | kosten ${num(r.spend).toFixed(2)} | klikken ${num(r.clicks)} | conv ${num(r.conversions)}`)
+        .map((r) => `campaign_id ${r.campaign_id}: ${r.campaign_name} | status ${r.status} | kosten ${num(r.spend).toFixed(2)} | klikken ${num(r.clicks)} | conv ${num(r.conversions)}`)
         .join("\n") || "(geen campagnes)";
 
       const ctx =
         `SEARCH CONSOLE (laatste 90 dagen) — top 30 zoektermen op impressies:\n${topQueries}\n\n` +
         `SEO-KANSEN (positie 5-20, >100 impressies):\n${chances || "(geen)"}\n\n` +
-        `GOOGLE ADS CAMPAGNES (laatste 30 dagen):\n${campaigns}`;
+        `GOOGLE ADS CAMPAGNES (laatste 30 dagen, campaign_id is de unieke ID):\n${campaigns}`;
       setContextInfo(`${gsc.length} zoektermen · ${ads.length} campagnes meegestuurd`);
       return ctx;
     } catch {
       setContextInfo("context ophalen mislukt — chat werkt zonder datacontext");
       return undefined;
+    }
+  }
+
+  async function executeAction(msgId: number, act: AdlyAction) {
+    setMessages((prev) => {
+      const next = prev.map((m) =>
+        m.id === msgId
+          ? { ...m, executedActions: [...(m.executedActions ?? []), act.label] }
+          : m
+      );
+      saveHistory(next);
+      return next;
+    });
+
+    try {
+      const params = { ...act.params };
+      const microsKeys = ["amount", "target_cpa", "cpc_bid_ceiling"];
+      for (const key of microsKeys) {
+        if (typeof params[key] === "number") {
+          (params as Record<string, unknown>)[key === "amount" ? "amount_micros" : `${key}_micros`] =
+            Math.round((params[key] as number) * 1_000_000);
+          delete params[key];
+        }
+      }
+
+      await windsorAction("google_ads", accounts.google_ads, act.action, params);
+      setMessages((prev) => {
+        const next = [
+          ...prev,
+          { id: Date.now(), role: "assistant" as const, content: `✅ Uitgevoerd: ${act.label}` },
+        ];
+        saveHistory(next);
+        return next;
+      });
+    } catch (e) {
+      setMessages((prev) => {
+        const next = [
+          ...prev,
+          { id: Date.now(), role: "assistant" as const, content: `⚠️ Actie mislukt: ${e}` },
+        ];
+        saveHistory(next);
+        return next;
+      });
     }
   }
 
@@ -82,6 +168,7 @@ export default function Adly({ accounts }: Props) {
     const userMsg: UIMessage = { id: Date.now(), role: "user", content: text };
     const history = [...messages, userMsg];
     setMessages(history);
+    saveHistory(history);
     setBusy(true);
 
     try {
@@ -90,25 +177,37 @@ export default function Adly({ accounts }: Props) {
         history.map(({ role, content }) => ({ role, content })),
         context
       );
-      setMessages([...history, { id: Date.now() + 1, role: "assistant", content: reply }]);
+      const next = [...history, { id: Date.now() + 1, role: "assistant" as const, content: reply }];
+      setMessages(next);
+      saveHistory(next);
     } catch (e) {
-      setMessages([...history, {
-        id: Date.now() + 1,
-        role: "assistant",
-        content: `⚠️ Fout: ${e}`,
-      }]);
+      const next = [...history, { id: Date.now() + 1, role: "assistant" as const, content: `⚠️ Fout: ${e}` }];
+      setMessages(next);
+      saveHistory(next);
     } finally {
       setBusy(false);
     }
   }
 
+  function clearHistory() {
+    setMessages([]);
+    saveHistory([]);
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <h1>Adly — AI-assistent</h1>
-      <p className="subtitle">
-        Je AI-collega voor SEO en Google Ads
-        {contextInfo ? ` · context: ${contextInfo}` : withContext ? " · context: actuele data wordt opgehaald per bericht" : ""}
-      </p>
+      <div className="adly-header">
+        <div>
+          <h1>Adly — AI-assistent</h1>
+          <p className="subtitle" style={{ marginBottom: 0 }}>
+            Je AI-collega voor SEO en Google Ads
+            {contextInfo ? ` · context: ${contextInfo}` : ""}
+          </p>
+        </div>
+        {messages.length > 0 && (
+          <button className="ghost" onClick={clearHistory}>Geschiedenis wissen</button>
+        )}
+      </div>
 
       <div className="chat-toolbar">
         <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: 12 }}>
@@ -132,11 +231,29 @@ export default function Adly({ accounts }: Props) {
             </div>
           </div>
         )}
-        {messages.map((m) => (
-          <div key={m.id} className={m.role === "user" ? "chat-msg user" : "chat-msg assistant"}>
-            <div className="chat-bubble">{renderContent(m.content)}</div>
-          </div>
-        ))}
+        {messages.map((m) => {
+          const parsed = m.role === "assistant" ? parseAction(m.content) : null;
+          const text = parsed ? parsed.rest : m.content;
+          const alreadyDone = (m.executedActions ?? []).includes(parsed?.action.label ?? "");
+          return (
+            <div key={m.id} className={m.role === "user" ? "chat-msg user" : "chat-msg assistant"}>
+              <div className="chat-bubble">
+                {renderContent(text)}
+                {parsed && (
+                  <div className="action-box">
+                    <button
+                      className={alreadyDone ? "ghost" : "primary"}
+                      disabled={alreadyDone}
+                      onClick={() => executeAction(m.id, parsed.action)}
+                    >
+                      {alreadyDone ? "✓ Uitgevoerd" : `Uitvoeren: ${parsed.action.label}`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
         {busy && (
           <div className="chat-msg assistant">
             <div className="chat-bubble typing">Adly denkt na…</div>

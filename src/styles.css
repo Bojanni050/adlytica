@@ -239,3 +239,6 @@ label.field { display: block; color: var(--muted); font-size: 12px; margin-botto
 
 .chat-input-row { display: flex; gap: 10px; padding-top: 12px; }
 .chat-input-row input { flex: 1; }
+
+.adly-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.action-box { margin-top: 10px; }
