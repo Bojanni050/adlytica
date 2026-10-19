@@ -98,7 +98,10 @@ impl WindsorClient {
         let text = resp.text().await.unwrap_or_default();
         if !(200..300).contains(&status) {
             let short = if text.len() > 400 { format!("{}…", &text[..400]) } else { text };
-            return Err(WindsorError(format!("Windsor API-fout ({status}): {short}")));
+            return Err(WindsorError(format!(
+                "Windsor API-fout ({status}) bij GET {url}?fields={} — {short}",
+                fields.join(",")
+            )));
         }
 
         let parsed: serde_json::Value = serde_json::from_str(&text)?;
@@ -141,7 +144,9 @@ impl WindsorClient {
         let text = resp.text().await.unwrap_or_default();
         if !(200..300).contains(&status) {
             let short = if text.len() > 400 { format!("{}…", &text[..400]) } else { text };
-            return Err(WindsorError(format!("Windsor API-fout ({status}): {short}")));
+            return Err(WindsorError(format!(
+                "Windsor API-fout ({status}) bij POST {url} action={action} — {short}"
+            )));
         }
         serde_json::from_str(&text)
     }
