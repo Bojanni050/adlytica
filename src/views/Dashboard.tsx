@@ -33,7 +33,7 @@ export default function Dashboard({ accounts }: Props) {
           }),
           windsorQuery({
             connector: "googleanalytics4", account: accounts.googleanalytics4,
-            fields: ["date", "sessions", "users", "pageviews"],
+            fields: ["date", "sessions", "users", "screen_page_views"],
             date_from: from, group_by: ["date"], limit: 5000,
           }),
         ]);
