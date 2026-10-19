@@ -148,6 +148,6 @@ impl WindsorClient {
                 "Windsor API-fout ({status}) bij POST {url} action={action} — {short}"
             )));
         }
-        serde_json::from_str(&text)
+        Ok(serde_json::from_str(&text)?)
     }
 }
