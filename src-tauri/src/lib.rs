@@ -383,7 +383,9 @@ fn show_notification(app: &tauri::AppHandle, title: &str, body: &str) -> Result<
 #[tauri::command]
 async fn run_audit(url: String, limit: Option<u32>) -> Result<audit::AuditResult, String> {
     let limit = limit.unwrap_or(100).clamp(1, 500) as usize;
-    audit::audit_site(&url, limit).await
+    let mut result = audit::audit_site(&url, limit).await?;
+    result.previous = audit::record(&result);
+    Ok(result)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]pub fn run() {

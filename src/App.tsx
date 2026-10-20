@@ -72,7 +72,7 @@ export default function App() {
     keywords: <KeywordSearch accounts={accounts} />,
     rankings: <Rankings accounts={accounts} />,
     seo: <SeoAnalysis accounts={accounts} />,
-    audit: <Audit />,
+    audit: <Audit accounts={accounts} />,
     campaigns: <Campaigns accounts={accounts} />,
     budget: <Budget accounts={accounts} />,
     searchterms: <SearchTerms accounts={accounts} />,

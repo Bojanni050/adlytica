@@ -239,10 +239,41 @@ export interface AuditPage {
   internal_links: number;
   external_links: number;
   schema: string[];
+  og: boolean;
+  hreflang: number;
+  lang_missing: boolean;
+  inbound: number;
+  score: number;
+  similar: string[];
   ms: number;
   errors: number;
   warnings: number;
   issues: AuditIssue[];
+}
+
+export interface LinkFinding {
+  source: string;
+  target: string;
+  kind: "internal" | "external";
+  status: number;
+  problem: "broken" | "redirect";
+}
+
+export interface AuditTask {
+  code: string;
+  label: string;
+  severity: "error" | "warning";
+  impact: "high" | "medium" | "low";
+  count: number;
+  pages: string[];
+}
+
+export interface PreviousRun {
+  at: string;
+  score: number;
+  errors: number;
+  warnings: number;
+  crawled: number;
 }
 
 export interface SiteCheck {
@@ -259,7 +290,12 @@ export interface AuditResult {
   truncated: boolean;
   sitemap_urls: number;
   duration_ms: number;
+  score: number;
+  tasks: AuditTask[];
+  links: LinkFinding[];
+  orphans: string[];
   checks: SiteCheck[];
+  previous: PreviousRun | null;
 }
 
 /** Crawlt de site in Rust en geeft per pagina de technische bevindingen terug. */
