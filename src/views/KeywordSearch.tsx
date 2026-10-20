@@ -27,6 +27,41 @@ function intentClass(intent: string): string {
   return "badge yellow";
 }
 
+interface SiteHit {
+  position: number;
+  clicks: number;
+  impressions: number;
+}
+
+type GapFilter = "all" | "gap" | "weak" | "ranking";
+
+function normalizeKeyword(value: unknown): string {
+  return String(value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/** Bouwt een opzoektabel van je eigen posities, met per zoekterm de beste positie. */
+function buildPositionMap(rows: Row[]): Record<string, SiteHit> {
+  const map: Record<string, SiteHit> = {};
+  for (const row of rows) {
+    const key = normalizeKeyword(row.query);
+    if (key === "") continue;
+    const hit: SiteHit = {
+      position: num(row.position),
+      clicks: num(row.clicks),
+      impressions: num(row.impressions),
+    };
+    const current = map[key];
+    if (!current || hit.position < current.position) map[key] = hit;
+  }
+  return map;
+}
+
+function positionBadge(hit: SiteHit | undefined) {
+  if (!hit) return <span className="badge yellow">nog niet</span>;
+  const cls = hit.position <= 3 ? "green" : hit.position <= 10 ? "blue" : hit.position <= 20 ? "yellow" : "red";
+  return <span className={`badge ${cls}`}>#{hit.position.toFixed(1)}</span>;
+}
+
 export default function KeywordSearch({ accounts }: Props) {
   const [mode, setMode] = useState<Mode>("gsc");
   const [term, setTerm] = useState("");
@@ -41,6 +76,9 @@ export default function KeywordSearch({ accounts }: Props) {
   const [activeCluster, setActiveCluster] = useState<string | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfMsg, setPdfMsg] = useState<string | null>(null);
+  const [positions, setPositions] = useState<Record<string, SiteHit>>({});
+  const [gapLoading, setGapLoading] = useState(false);
+  const [gapFilter, setGapFilter] = useState<GapFilter>("all");
 
   async function search() {
     setLoading(true);
@@ -48,6 +86,8 @@ export default function KeywordSearch({ accounts }: Props) {
     setRows([]);
     setClusters([]);
     setActiveCluster(null);
+    setGapFilter("all");
+    setPositions({});
     try {
       if (mode === "gsc") {
         const data = await windsorQuery({
@@ -69,17 +109,29 @@ export default function KeywordSearch({ accounts }: Props) {
           keyword_plan_network: "GOOGLE_SEARCH",
         };
         if (pageUrl.trim() !== "") options.page_url = pageUrl.trim();
-        const data = await windsorQuery({
+        const planner = windsorQuery({
           connector: "google_ads", account: accounts.google_ads,
           fields: ["keyword_text", "monthly_search_volume", "competition", "low_top_of_page_bid", "high_top_of_page_bid"],
           options, limit: 500,
         });
+        // De gratis gap: welke ideeën je al rankt (en waar) volgens Search Console.
+        const own = accounts.searchconsole
+          ? windsorQuery({
+              connector: "searchconsole", account: accounts.searchconsole,
+              fields: ["query", "clicks", "impressions", "position"],
+              date_from: dateNDaysAgo(89), group_by: ["query"], limit: 5000,
+            }).catch(() => [] as Row[])
+          : Promise.resolve([] as Row[]);
+        setGapLoading(true);
+        const [data, gsc] = await Promise.all([planner, own]);
+        setPositions(buildPositionMap(gsc));
         setRows(data);
       }
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
+      setGapLoading(false);
     }
   }
 
@@ -124,11 +176,14 @@ export default function KeywordSearch({ accounts }: Props) {
       const stamp = new Date().toISOString().slice(0, 10);
       const body = visible.map((row) => {
         if (mode === "planner") {
-          return [
+          const hit = positions[normalizeKeyword(keywordOf(row, "planner"))];
+          const cells = [
             keywordOf(row, mode),
             fmt(num(row.monthly_search_volume ?? row.avg_monthly_searches ?? row.search_volume ?? 0), 0),
             String(row.competition ?? row.competition_level ?? ""),
           ];
+          if (hasPositions) cells.push(hit ? `#${hit.position.toFixed(1)}` : "nog niet");
+          return cells;
         }
         return [
           keywordOf(row, mode),
@@ -150,12 +205,29 @@ export default function KeywordSearch({ accounts }: Props) {
                 { label: "Klikken", value: fmt(visible.reduce((sum, r) => sum + num(r.clicks), 0), 0) },
                 { label: "Impressies", value: fmt(visible.reduce((sum, r) => sum + num(r.impressions), 0), 0) },
               ]
-            : [{ label: "Keywords", value: String(visible.length) }],
+            : [
+                { label: "Keywords", value: String(visible.length) },
+                ...(hasPositions
+                  ? [
+                      { label: "Nog niet in je posities", value: String(gapStats.missing) },
+                      { label: "Onbenut zoekvolume /mnd", value: fmt(gapStats.volume, 0) },
+                    ]
+                  : []),
+              ],
         sections: [
           {
             title: mode === "gsc" ? "Zoektermen" : "Keyword-ideeën",
-            head: mode === "gsc" ? ["Zoekterm", "Klikken", "Impressies", "CTR", "Positie"] : ["Keyword", "Volume /mnd", "Competitie"],
+            head:
+              mode === "gsc"
+                ? ["Zoekterm", "Klikken", "Impressies", "CTR", "Positie"]
+                : hasPositions
+                  ? ["Keyword", "Volume /mnd", "Competitie", "Jouw positie"]
+                  : ["Keyword", "Volume /mnd", "Competitie"],
             rows: body,
+            note:
+              mode === "planner" && hasPositions
+                ? "Jouw positie komt uit Search Console (laatste 90 dagen). 'Nog niet' betekent: geen vertoningen voor deze zoekterm."
+                : undefined,
           },
           ...(clusters.length > 0
             ? [{
@@ -180,7 +252,32 @@ export default function KeywordSearch({ accounts }: Props) {
     }
   }
 
+  const hasPositions = Object.keys(positions).length > 0;
+
+  const gapStats = (() => {
+    let missing = 0;
+    let weak = 0;
+    let volume = 0;
+    for (const row of rows) {
+      const hit = positions[normalizeKeyword(keywordOf(row, "planner"))];
+      const vol = num(row.monthly_search_volume ?? row.avg_monthly_searches ?? row.search_volume ?? 0);
+      if (!hit) {
+        missing += 1;
+        volume += vol;
+      } else if (hit.position > 20) {
+        weak += 1;
+      }
+    }
+    return { total: rows.length, missing, weak, volume };
+  })();
+
   const visible = rows.filter((row) => {
+    if (mode === "planner" && hasPositions) {
+      const hit = positions[normalizeKeyword(keywordOf(row, "planner"))];
+      if (gapFilter === "gap" && hit) return false;
+      if (gapFilter === "weak" && !(hit && hit.position > 20)) return false;
+      if (gapFilter === "ranking" && !(hit && hit.position <= 20)) return false;
+    }
     if (!activeCluster) return true;
     const cluster = clusters.find((item) => item.name === activeCluster);
     if (!cluster) return true;
@@ -256,6 +353,37 @@ export default function KeywordSearch({ accounts }: Props) {
           )}
         </>
       )}
+      {mode === "planner" && rows.length > 0 && (
+        <div className="toolbar" style={{ marginBottom: 12 }}>
+          <span className="hint" style={{ margin: 0 }}>
+            {gapLoading
+              ? "Je eigen posities ophalen…"
+              : hasPositions
+                ? `${gapStats.missing} van ${gapStats.total} ideeën rank je nog niet · ${fmt(gapStats.volume, 0)} zoekvolume per maand · ${gapStats.weak} buiten top 20`
+                : "Geen Search Console-koppeling gevonden, dus je posities ontbreken."}
+          </span>
+          {hasPositions && (
+            <div className="range-switch" role="group" aria-label="Gap-filter">
+              {([
+                ["all", "Alles"],
+                ["gap", "Nog niet"],
+                ["weak", "Buiten top 20"],
+                ["ranking", "In top 20"],
+              ] as [GapFilter, string][]).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={gapFilter === value ? "range-option active" : "range-option"}
+                  onClick={() => setGapFilter(value)}
+                  aria-pressed={gapFilter === value}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {rows.length > 0 && (
         <div className="card">
           {mode === "gsc" ? (
@@ -288,6 +416,7 @@ export default function KeywordSearch({ accounts }: Props) {
                   <th>Keyword</th>
                   <th className="num">Zoekvolume /mnd</th>
                   <th>Competitie</th>
+                  {hasPositions && <th>Jouw positie</th>}
                   <th className="num">Bied range (laag)</th>
                   <th className="num">Bied range (hoog)</th>
                 </tr>
@@ -304,6 +433,7 @@ export default function KeywordSearch({ accounts }: Props) {
                       <td>{String(kw)}</td>
                       <td className="num">{fmt(num(vol), 0)}</td>
                       <td><span className={`badge ${String(comp).toLowerCase().includes("high") ? "red" : String(comp).toLowerCase().includes("low") ? "green" : "yellow"}`}>{String(comp)}</span></td>
+                      {hasPositions && <td>{positionBadge(positions[normalizeKeyword(kw)])}</td>}
                       <td className="num">{fmt(num(low), 2)}</td>
                       <td className="num">{fmt(num(high), 2)}</td>
                     </tr>
