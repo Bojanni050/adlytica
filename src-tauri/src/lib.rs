@@ -1,6 +1,7 @@
 mod adly;
 mod audit;
 mod config;
+mod pagespeed;
 mod rankings;
 mod trends;
 mod windsor;
@@ -21,6 +22,7 @@ pub struct AppState {
     pub wp_user: Mutex<Option<String>>,
     pub wp_app_password: Mutex<Option<String>>,
     pub brand: Mutex<Option<serde_json::Value>>,
+    pub pagespeed_api_key: Mutex<Option<String>>,
     pub notifications_enabled: Mutex<bool>,
     pub trends: trends::TrendsState,
 }
@@ -37,6 +39,7 @@ fn persist(state: &AppState) {
         wp_user: state.wp_user.lock().unwrap().clone(),
         wp_app_password: state.wp_app_password.lock().unwrap().clone(),
         brand: state.brand.lock().unwrap().clone(),
+        pagespeed_api_key: state.pagespeed_api_key.lock().unwrap().clone(),
         notifications_enabled: *state.notifications_enabled.lock().unwrap(),
     };
     if let Err(e) = config::save(&cfg) {
@@ -55,6 +58,7 @@ pub struct SettingsStatus {
     pub wp_url: Option<String>,
     pub wp_user: Option<String>,
     pub wp_password_set: bool,
+    pub pagespeed_key_set: bool,
 }
 
 fn windsor_client(state: &AppState) -> Result<windsor::WindsorClient, String> {
@@ -110,6 +114,7 @@ async fn get_settings_status(state: State<'_, AppState>) -> Result<SettingsStatu
         wp_url: state.wp_url.lock().unwrap().clone(),
         wp_user: state.wp_user.lock().unwrap().clone(),
         wp_password_set: state.wp_app_password.lock().unwrap().is_some(),
+        pagespeed_key_set: state.pagespeed_api_key.lock().unwrap().is_some(),
     })
 }
 
@@ -388,6 +393,30 @@ async fn run_audit(url: String, limit: Option<u32>) -> Result<audit::AuditResult
     Ok(result)
 }
 
+#[tauri::command]
+async fn set_pagespeed_key(key: String, state: State<'_, AppState>) -> Result<(), String> {
+    let trimmed = key.trim().to_string();
+    *state.pagespeed_api_key.lock().unwrap() = if trimmed.is_empty() { None } else { Some(trimmed) };
+    persist(&state);
+    Ok(())
+}
+
+/// Meet een pagina met PageSpeed Insights (Lighthouse, mobiel of desktop).
+#[tauri::command]
+async fn pagespeed(
+    url: String,
+    strategy: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<pagespeed::PageSpeedResult, String> {
+    let key = state
+        .pagespeed_api_key
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "Vul eerst een PageSpeed API-key in bij Instellingen.".to_string())?;
+    pagespeed::measure(&url, &key, strategy.as_deref().unwrap_or("mobile")).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -403,6 +432,7 @@ async fn run_audit(url: String, limit: Option<u32>) -> Result<audit::AuditResult
                 wp_user: Mutex::new(cfg.wp_user),
                 wp_app_password: Mutex::new(cfg.wp_app_password),
                 brand: Mutex::new(cfg.brand),
+                pagespeed_api_key: Mutex::new(cfg.pagespeed_api_key),
                 notifications_enabled: Mutex::new(cfg.notifications_enabled),
                 trends: trends::TrendsState {
                     sidecar: Mutex::new(None),
@@ -437,6 +467,8 @@ async fn run_audit(url: String, limit: Option<u32>) -> Result<audit::AuditResult
             notify_now,
             test_notification,
             run_audit,
+            pagespeed,
+            set_pagespeed_key,
             save_pdf
         ])
         .run(tauri::generate_context!())

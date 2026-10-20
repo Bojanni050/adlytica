@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   setWindsorKey, setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
   setWordpressConfig, testWordpress, setBrand, BrandConfig,
-  getNotifications, setNotifications as saveNotifications, testNotification,
+  getNotifications, setNotifications as saveNotifications, testNotification, setPagespeedKey,
 } from "../lib/api";
 import { WHITE_LABEL_ENABLED } from "../lib/features";
 
@@ -37,6 +37,7 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
   const [brandFooter, setBrandFooter] = useState(brand?.footer ?? DEFAULT_BRAND.footer);
   const [brandLogo, setBrandLogo] = useState<string | null>(brand?.logo ?? null);
   const [brandMsg, setBrandMsg] = useState<string | null>(null);
+  const [psKey, setPsKey] = useState("");
   const [notifications, setNotifications] = useState(false);
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -68,6 +69,7 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
       await setPythonPath(pythonPath);
       await setMistralConfig(mistralKey.trim(), mistralModel);
       await setWordpressConfig(wpUrl.trim(), wpUser.trim(), wpPassword.trim());
+      if (psKey.trim() !== "") await setPagespeedKey(psKey.trim());
       await saveNotifications(notifications);
       const nextBrand: BrandConfig = {
         name: brandName.trim() || DEFAULT_BRAND.name,
@@ -242,6 +244,23 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
           <button className="ghost" onClick={testWp}>Verbinding testen</button>
           {wpTest && <span className="hint" style={{ alignSelf: "center" }}>{wpTest}</span>}
         </div>
+
+        <h3 style={{ marginTop: 20 }}>PageSpeed</h3>
+        <div className="form-row">
+          <div>
+            <label className="field">Google API-key</label>
+            <input
+              type="password"
+              value={psKey}
+              onChange={(e) => setPsKey(e.target.value)}
+              placeholder={saved?.pagespeed_key_set ? "opgeslagen" : "AIza…"}
+            />
+          </div>
+        </div>
+        <p className="hint">
+          Gratis key via de Google Cloud-console: PageSpeed Insights API aanzetten en een API-key
+          maken. Zonder key blijft de view Snelheid leeg.
+        </p>
 
         {WHITE_LABEL_ENABLED && (
           <>

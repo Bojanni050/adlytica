@@ -845,7 +845,7 @@ pub fn record(result: &AuditResult) -> Option<PreviousRun> {
     previous
 }
 
-fn now_stamp() -> String {
+pub(crate) fn now_stamp() -> String {
     // Zonder extra datumcrate: seconden sinds epoch is genoeg voor de UI,
     // maar een leesbare ISO-string is prettiger. We gebruiken de klok van het systeem.
     let seconds = std::time::SystemTime::now()
@@ -1173,11 +1173,6 @@ mod tests {
             result.orphans.len(),
             result.duration_ms
         );
-        for page in &result.pages {
-            for finding in page.issues.iter().filter(|i| i.code == "similar_content") {
-                println!("  {} :: {}", page.url, finding.message);
-            }
-        }
         for task in &result.tasks {
             println!("{:>6} {:>3} pagina's  {}", task.impact, task.count, task.label);
         }

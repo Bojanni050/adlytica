@@ -88,6 +88,7 @@ export interface SettingsStatus {
   wp_url: string | null;
   wp_user: string | null;
   wp_password_set: boolean;
+  pagespeed_key_set: boolean;
 }
 
 export async function getSettingsStatus(): Promise<SettingsStatus> {
@@ -301,4 +302,43 @@ export interface AuditResult {
 /** Crawlt de site in Rust en geeft per pagina de technische bevindingen terug. */
 export async function runAudit(url: string, limit: number): Promise<AuditResult> {
   return invoke<AuditResult>("run_audit", { url, limit });
+}
+
+
+export interface PageSpeedScores {
+  performance: number;
+  accessibility: number;
+  best_practices: number;
+  seo: number;
+}
+
+export interface PageSpeedMetric {
+  key: string;
+  label: string;
+  value: string;
+  score: number;
+}
+
+export interface PageSpeedOpportunity {
+  title: string;
+  description: string;
+  savings_ms: number;
+}
+
+export interface PageSpeedResult {
+  url: string;
+  strategy: "mobile" | "desktop";
+  scores: PageSpeedScores;
+  metrics: PageSpeedMetric[];
+  opportunities: PageSpeedOpportunity[];
+  fetched_at: string;
+}
+
+export async function setPagespeedKey(key: string): Promise<void> {
+  await invoke("set_pagespeed_key", { key });
+}
+
+/** Meet een pagina met PageSpeed Insights; de Rust-kant gebruikt de bewaarde key. */
+export async function runPageSpeed(url: string, strategy: "mobile" | "desktop"): Promise<PageSpeedResult> {
+  return invoke<PageSpeedResult>("pagespeed", { url, strategy });
 }

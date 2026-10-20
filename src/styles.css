@@ -1115,3 +1115,21 @@ button.link { background: none; border: none; color: var(--accent); cursor: poin
 @media (max-width: 1100px) {
   .insights-split { grid-template-columns: 1fr; }
 }
+
+/* Snelheid (PageSpeed) */
+.speed-gauges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 10px; }
+.speed-gauge { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; }
+.speed-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 12px; margin-top: 12px; }
+.speed-metric { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.speed-metric:last-child { border-bottom: none; }
+.speed-metric-label { color: var(--muted); font-size: 12.5px; }
+.speed-metric-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.speed-metric-bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.speed-metric-bar span { display: block; height: 100%; border-radius: 2px; }
+.speed-opportunities { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; }
+.speed-opportunities li { color: var(--text); }
+.speed-opportunity-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+@media (max-width: 1100px) {
+  .speed-gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .speed-grid { grid-template-columns: 1fr; }
+}
