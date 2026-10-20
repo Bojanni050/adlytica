@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { getAccounts } from "./lib/api";
 import { DEFAULT_ACCOUNTS } from "./lib/constants";
+import CommandPalette from "./components/CommandPalette";
 import Dashboard from "./views/Dashboard";
 import KeywordSearch from "./views/KeywordSearch";
 import Rankings from "./views/Rankings";
@@ -28,6 +29,7 @@ const NAV: { id: ViewId; label: string; icon: string }[] = [
 export default function App() {
   const [view, setView] = useState<ViewId>("dashboard");
   const [accounts, setAccounts] = useState<Record<string, string>>(DEFAULT_ACCOUNTS);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
     getAccounts()
@@ -35,6 +37,17 @@ export default function App() {
         if (Object.keys(a).length > 0) setAccounts(a);
       })
       .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   const views: Record<ViewId, React.ReactNode> = {
@@ -68,9 +81,19 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <button className="palette-trigger" onClick={() => setPaletteOpen(true)}>
+          <span>Snel naar…</span>
+          <span className="kbd">Ctrl K</span>
+        </button>
         <div className="sidebar-footer">v0.1.0 — White Vision</div>
       </aside>
       <main className="content">{views[view]}</main>
+      <CommandPalette
+        open={paletteOpen}
+        items={NAV.map((item) => ({ id: item.id, label: item.label, icon: item.icon }))}
+        onNavigate={(id) => setView(id as ViewId)}
+        onClose={() => setPaletteOpen(false)}
+      />
     </div>
   );
 }
