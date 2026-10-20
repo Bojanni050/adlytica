@@ -131,6 +131,22 @@ export async function setWpSeo(
   return invoke("set_wp_seo", { kind, id, title, description });
 }
 
+export interface BrandConfig {
+  name: string;
+  accent: string;
+  footer: string;
+  /** Logo als data-URL (png/jpeg/webp/svg), of null voor het standaardmerk. */
+  logo: string | null;
+}
+
+export async function getBrand(): Promise<BrandConfig | null> {
+  return invoke("get_brand");
+}
+
+export async function setBrand(brand: BrandConfig | null): Promise<void> {
+  return invoke("set_brand", { brand });
+}
+
 export async function setMistralConfig(apiKey: string, model: string): Promise<void> {
   return invoke("set_mistral_config", { apiKey, model });
 }

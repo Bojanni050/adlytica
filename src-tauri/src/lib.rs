@@ -19,6 +19,7 @@ pub struct AppState {
     pub wp_url: Mutex<Option<String>>,
     pub wp_user: Mutex<Option<String>>,
     pub wp_app_password: Mutex<Option<String>>,
+    pub brand: Mutex<Option<serde_json::Value>>,
     pub trends: trends::TrendsState,
 }
 
@@ -33,6 +34,7 @@ fn persist(state: &AppState) {
         wp_url: state.wp_url.lock().unwrap().clone(),
         wp_user: state.wp_user.lock().unwrap().clone(),
         wp_app_password: state.wp_app_password.lock().unwrap().clone(),
+        brand: state.brand.lock().unwrap().clone(),
     };
     if let Err(e) = config::save(&cfg) {
         eprintln!("Config niet opgeslagen: {e}");
@@ -295,6 +297,21 @@ async fn set_python_path(python: String, state: State<'_, AppState>) -> Result<(
     Ok(())
 }
 
+#[tauri::command]
+async fn get_brand(state: State<'_, AppState>) -> Result<Option<serde_json::Value>, String> {
+    Ok(state.brand.lock().unwrap().clone())
+}
+
+#[tauri::command]
+async fn set_brand(
+    brand: Option<serde_json::Value>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    *state.brand.lock().unwrap() = brand;
+    persist(&state);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -309,6 +326,7 @@ pub fn run() {
                 wp_url: Mutex::new(cfg.wp_url),
                 wp_user: Mutex::new(cfg.wp_user),
                 wp_app_password: Mutex::new(cfg.wp_app_password),
+                brand: Mutex::new(cfg.brand),
                 trends: trends::TrendsState {
                     sidecar: Mutex::new(None),
                     python: Mutex::new(cfg.python_path),
@@ -334,7 +352,9 @@ pub fn run() {
             set_wordpress_config,
             test_wordpress,
             get_wp_seo,
-            set_wp_seo
+            set_wp_seo,
+            get_brand,
+            set_brand
         ])
         .run(tauri::generate_context!())
         .expect("Adlytica kon niet starten");

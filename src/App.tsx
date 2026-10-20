@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getAccounts } from "./lib/api";
+import { getAccounts, getBrand, BrandConfig } from "./lib/api";
 import { DEFAULT_ACCOUNTS } from "./lib/constants";
 import CommandPalette from "./components/CommandPalette";
 import Dashboard from "./views/Dashboard";
@@ -31,6 +31,17 @@ const NAV: { id: ViewId; label: string; icon: string }[] = [
 export default function App() {
   const [view, setView] = useState<ViewId>("dashboard");
   const [accounts, setAccounts] = useState<Record<string, string>>(DEFAULT_ACCOUNTS);
+  const [brand, setBrandState] = useState<BrandConfig | null>(null);
+
+  useEffect(() => {
+    getBrand()
+      .then((b) => {
+        if (!b) return;
+        setBrandState(b);
+        if (b.accent) document.documentElement.style.setProperty("--accent", b.accent);
+      })
+      .catch(() => undefined);
+  }, []);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
@@ -62,15 +73,29 @@ export default function App() {
     searchterms: <SearchTerms accounts={accounts} />,
     adly: <Adly accounts={accounts} />,
     trends: <Trends />,
-    settings: <Settings accounts={accounts} onAccounts={setAccounts} />,
+    settings: (
+      <Settings
+        accounts={accounts}
+        onAccounts={setAccounts}
+        brand={brand}
+        onBrand={(b) => {
+          setBrandState(b);
+          if (b?.accent) document.documentElement.style.setProperty("--accent", b.accent);
+        }}
+      />
+    ),
   };
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="logo">
-          <span className="logo-mark">◉</span>
-          <span className="logo-text">Adlytica</span>
+          {brand?.logo ? (
+            <img className="logo-img" src={brand.logo} alt="" />
+          ) : (
+            <span className="logo-mark">◉</span>
+          )}
+          <span className="logo-text">{brand?.name || "Adlytica"}</span>
         </div>
         <nav>
           {NAV.map((item) => (
@@ -88,7 +113,7 @@ export default function App() {
           <span>Snel naar…</span>
           <span className="kbd">Ctrl K</span>
         </button>
-        <div className="sidebar-footer">v0.1.0 — White Vision</div>
+        <div className="sidebar-footer">{brand?.footer || "v0.1.0 — White Vision"}</div>
       </aside>
       <main className="content">{views[view]}</main>
       <CommandPalette

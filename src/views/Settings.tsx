@@ -1,15 +1,24 @@
 import React, { useEffect, useState } from "react";
 import {
   setWindsorKey, setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
-  setWordpressConfig, testWordpress,
+  setWordpressConfig, testWordpress, setBrand, BrandConfig,
 } from "../lib/api";
 
 interface Props {
   accounts: Record<string, string>;
   onAccounts: (a: Record<string, string>) => void;
+  brand: BrandConfig | null;
+  onBrand: (b: BrandConfig | null) => void;
 }
 
-export default function Settings({ accounts, onAccounts }: Props) {
+const DEFAULT_BRAND: BrandConfig = {
+  name: "Adlytica",
+  accent: "#f59e0b",
+  footer: "v0.1.0 — White Vision",
+  logo: null,
+};
+
+export default function Settings({ accounts, onAccounts, brand, onBrand }: Props) {
   const [apiKey, setApiKey] = useState("");
   const [gscAccount, setGscAccount] = useState(accounts.searchconsole ?? "");
   const [adsAccount, setAdsAccount] = useState(accounts.google_ads ?? "");
@@ -21,6 +30,11 @@ export default function Settings({ accounts, onAccounts }: Props) {
   const [wpUser, setWpUser] = useState("");
   const [wpPassword, setWpPassword] = useState("");
   const [wpTest, setWpTest] = useState<string | null>(null);
+  const [brandName, setBrandName] = useState(brand?.name ?? DEFAULT_BRAND.name);
+  const [brandAccent, setBrandAccent] = useState(brand?.accent ?? DEFAULT_BRAND.accent);
+  const [brandFooter, setBrandFooter] = useState(brand?.footer ?? DEFAULT_BRAND.footer);
+  const [brandLogo, setBrandLogo] = useState<string | null>(brand?.logo ?? null);
+  const [brandMsg, setBrandMsg] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [saved, setSaved] = useState<SettingsStatus | null>(null);
 
@@ -49,6 +63,14 @@ export default function Settings({ accounts, onAccounts }: Props) {
       await setPythonPath(pythonPath);
       await setMistralConfig(mistralKey.trim(), mistralModel);
       await setWordpressConfig(wpUrl.trim(), wpUser.trim(), wpPassword.trim());
+      const nextBrand: BrandConfig = {
+        name: brandName.trim() || DEFAULT_BRAND.name,
+        accent: brandAccent,
+        footer: brandFooter.trim() || DEFAULT_BRAND.footer,
+        logo: brandLogo,
+      };
+      await setBrand(nextBrand);
+      onBrand(nextBrand);
       onAccounts({
         searchconsole: gscAccount,
         google_ads: adsAccount,
@@ -58,6 +80,25 @@ export default function Settings({ accounts, onAccounts }: Props) {
     } catch (e) {
       setStatus(`Fout: ${e}`);
     }
+  }
+
+  function pickLogo(file: File | undefined) {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp|svg\+xml)$/.test(file.type)) {
+      setBrandMsg("Kies een png-, jpg-, webp- of svg-bestand.");
+      return;
+    }
+    if (file.size > 400_000) {
+      setBrandMsg("Het logo is groter dan 400 kB. Verklein het bestand eerst.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setBrandLogo(String(reader.result ?? ""));
+      setBrandMsg(null);
+    };
+    reader.onerror = () => setBrandMsg("Het bestand kon niet worden gelezen.");
+    reader.readAsDataURL(file);
   }
 
   async function testWp() {
@@ -193,6 +234,62 @@ export default function Settings({ accounts, onAccounts }: Props) {
           <button className="ghost" onClick={testWp}>Verbinding testen</button>
           {wpTest && <span className="hint" style={{ alignSelf: "center" }}>{wpTest}</span>}
         </div>
+
+        <h3 style={{ marginTop: 20 }}>Wit-label</h3>
+        <div className="form-row">
+          <div>
+            <label className="field">App-naam</label>
+            <input type="text" value={brandName} onChange={(e) => setBrandName(e.target.value)} placeholder="Adlytica" />
+          </div>
+          <div>
+            <label className="field">Accentkleur</label>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="color" value={brandAccent} onChange={(e) => setBrandAccent(e.target.value)}
+                style={{ width: 44, height: 34, padding: 2, background: "var(--panel-2)", border: "1px solid var(--border)", borderRadius: 8 }}
+              />
+              <input type="text" value={brandAccent} onChange={(e) => setBrandAccent(e.target.value)} style={{ width: 110 }} />
+            </div>
+          </div>
+        </div>
+        <div className="form-row">
+          <div>
+            <label className="field">Voettekst in de zijbalk</label>
+            <input type="text" value={brandFooter} onChange={(e) => setBrandFooter(e.target.value)} />
+          </div>
+        </div>
+        <div className="form-row">
+          <div>
+            <label className="field">Logo</label>
+            <div className="brand-logo-row">
+              {brandLogo ? (
+                <img className="brand-logo-preview" src={brandLogo} alt="Logo" />
+              ) : (
+                <span className="brand-logo-empty">◉</span>
+              )}
+              <label className="ghost brand-logo-pick">
+                Bestand kiezen
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  onChange={(e) => pickLogo(e.target.files?.[0])}
+                  style={{ display: "none" }}
+                />
+              </label>
+              {brandLogo && (
+                <button className="ghost" type="button" onClick={() => setBrandLogo(null)}>
+                  Verwijderen
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        <p className="hint">
+          png, jpg, webp of svg, maximaal 400 kB. Het logo wordt als data-URL in de configuratie
+          bewaard en verschijnt in de zijbalk. De accentkleur geldt voor knoppen, menu en randen;
+          de grafiekreeksen houden hun eigen palet.
+        </p>
+        {brandMsg && <p className="hint" style={{ color: "var(--danger)" }}>{brandMsg}</p>}
 
         <div style={{ marginTop: 20 }}>
           <button className="primary" onClick={save}>Opslaan</button>

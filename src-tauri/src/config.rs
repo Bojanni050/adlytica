@@ -26,6 +26,9 @@ pub struct AppConfig {
     pub wp_user: Option<String>,
     #[serde(default)]
     pub wp_app_password: Option<String>,
+    /// Wit-label: app-naam, accentkleur, voettekst en logo (data-URL).
+    #[serde(default)]
+    pub brand: Option<serde_json::Value>,
 }
 
 fn default_mistral_model() -> String {
@@ -48,6 +51,7 @@ impl Default for AppConfig {
             wp_url: None,
             wp_user: None,
             wp_app_password: None,
+            brand: None,
         }
     }
 }
