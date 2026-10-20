@@ -1,4 +1,5 @@
 mod adly;
+mod audit;
 mod config;
 mod rankings;
 mod trends;
@@ -378,6 +379,13 @@ fn show_notification(app: &tauri::AppHandle, title: &str, body: &str) -> Result<
         .map_err(|e| format!("Melding kon niet worden getoond: {e}"))
 }
 
+/// Crawlt de site en controleert elke pagina op technische SEO-problemen.
+#[tauri::command]
+async fn run_audit(url: String, limit: Option<u32>) -> Result<audit::AuditResult, String> {
+    let limit = limit.unwrap_or(100).clamp(1, 500) as usize;
+    audit::audit_site(&url, limit).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -426,6 +434,7 @@ fn show_notification(app: &tauri::AppHandle, title: &str, body: &str) -> Result<
             set_notifications,
             notify_now,
             test_notification,
+            run_audit,
             save_pdf
         ])
         .run(tauri::generate_context!())

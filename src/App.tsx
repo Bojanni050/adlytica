@@ -13,14 +13,16 @@ import SearchTerms from "./views/SearchTerms";
 import Trends from "./views/Trends";
 import Adly from "./views/Adly";
 import Settings from "./views/Settings";
+import Audit from "./views/Audit";
 
-type ViewId = "dashboard" | "keywords" | "rankings" | "seo" | "campaigns" | "searchterms" | "budget" | "adly" | "trends" | "settings";
+type ViewId = "dashboard" | "keywords" | "rankings" | "seo" | "audit" | "campaigns" | "searchterms" | "budget" | "adly" | "trends" | "settings";
 
 const NAV: { id: ViewId; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▤" },
   { id: "keywords", label: "Keyword Search", icon: "⌕" },
   { id: "rankings", label: "Posities", icon: "↕" },
   { id: "seo", label: "SEO Analyse", icon: "◈" },
+  { id: "audit", label: "Audit", icon: "⌗" },
   { id: "campaigns", label: "Advertenties", icon: "◧" },
   { id: "budget", label: "Budget", icon: "◔" },
   { id: "searchterms", label: "Zoektermen", icon: "⊘" },
@@ -70,6 +72,7 @@ export default function App() {
     keywords: <KeywordSearch accounts={accounts} />,
     rankings: <Rankings accounts={accounts} />,
     seo: <SeoAnalysis accounts={accounts} />,
+    audit: <Audit />,
     campaigns: <Campaigns accounts={accounts} />,
     budget: <Budget accounts={accounts} />,
     searchterms: <SearchTerms accounts={accounts} />,

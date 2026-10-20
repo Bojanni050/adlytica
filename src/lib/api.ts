@@ -214,3 +214,55 @@ export async function testNotification(): Promise<void> {
 export async function savePdf(filename: string, bytes: number[]): Promise<string> {
   return invoke<string>("save_pdf", { filename, bytes });
 }
+
+export interface AuditIssue {
+  code: string;
+  severity: "error" | "warning";
+  message: string;
+}
+
+export interface AuditPage {
+  url: string;
+  status: number;
+  final_url: string;
+  redirect: boolean;
+  title: string;
+  title_len: number;
+  meta_len: number;
+  h1: string;
+  h1_count: number;
+  canonical: string;
+  noindex: boolean;
+  words: number;
+  images: number;
+  images_no_alt: number;
+  internal_links: number;
+  external_links: number;
+  schema: string[];
+  ms: number;
+  errors: number;
+  warnings: number;
+  issues: AuditIssue[];
+}
+
+export interface SiteCheck {
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface AuditResult {
+  base: string;
+  pages: AuditPage[];
+  crawled: number;
+  failed: number;
+  truncated: boolean;
+  sitemap_urls: number;
+  duration_ms: number;
+  checks: SiteCheck[];
+}
+
+/** Crawlt de site in Rust en geeft per pagina de technische bevindingen terug. */
+export async function runAudit(url: string, limit: number): Promise<AuditResult> {
+  return invoke<AuditResult>("run_audit", { url, limit });
+}
