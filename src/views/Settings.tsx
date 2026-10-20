@@ -3,6 +3,7 @@ import {
   setWindsorKey, setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
   setWordpressConfig, testWordpress, setBrand, BrandConfig,
 } from "../lib/api";
+import { WHITE_LABEL_ENABLED } from "../lib/features";
 
 interface Props {
   accounts: Record<string, string>;
@@ -69,8 +70,10 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
         footer: brandFooter.trim() || DEFAULT_BRAND.footer,
         logo: brandLogo,
       };
-      await setBrand(nextBrand);
-      onBrand(nextBrand);
+      if (WHITE_LABEL_ENABLED) {
+        await setBrand(nextBrand);
+        onBrand(nextBrand);
+      }
       onAccounts({
         searchconsole: gscAccount,
         google_ads: adsAccount,
@@ -235,6 +238,8 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
           {wpTest && <span className="hint" style={{ alignSelf: "center" }}>{wpTest}</span>}
         </div>
 
+        {WHITE_LABEL_ENABLED && (
+          <>
         <h3 style={{ marginTop: 20 }}>Wit-label</h3>
         <div className="form-row">
           <div>
@@ -290,6 +295,8 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
           de grafiekreeksen houden hun eigen palet.
         </p>
         {brandMsg && <p className="hint" style={{ color: "var(--danger)" }}>{brandMsg}</p>}
+          </>
+        )}
 
         <div style={{ marginTop: 20 }}>
           <button className="primary" onClick={save}>Opslaan</button>

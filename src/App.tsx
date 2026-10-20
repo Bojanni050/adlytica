@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { getAccounts, getBrand, BrandConfig } from "./lib/api";
 import { DEFAULT_ACCOUNTS } from "./lib/constants";
+import { WHITE_LABEL_ENABLED } from "./lib/features";
 import CommandPalette from "./components/CommandPalette";
 import Dashboard from "./views/Dashboard";
 import KeywordSearch from "./views/KeywordSearch";
@@ -34,6 +35,7 @@ export default function App() {
   const [brand, setBrandState] = useState<BrandConfig | null>(null);
 
   useEffect(() => {
+    if (!WHITE_LABEL_ENABLED) return;
     getBrand()
       .then((b) => {
         if (!b) return;
