@@ -1133,3 +1133,19 @@ button.link { background: none; border: none; color: var(--accent); cursor: poin
   .speed-gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .speed-grid { grid-template-columns: 1fr; }
 }
+
+/* Rapport-samensteller */
+.report-blocks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.report-block {
+  display: flex; gap: 10px; align-items: flex-start; cursor: pointer;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--panel-2);
+}
+.report-block.active { border-color: var(--accent); background: rgba(245, 158, 11, 0.07); }
+.report-block input { margin-top: 3px; }
+.report-block span { display: flex; flex-direction: column; gap: 3px; }
+.report-block .hint { margin: 0; }
+.report-block strong { font-size: 13px; font-weight: 600; }
+@media (max-width: 900px) {
+  .report-blocks { grid-template-columns: minmax(0, 1fr); }
+}

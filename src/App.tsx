@@ -15,9 +15,10 @@ import Trends from "./views/Trends";
 import Adly from "./views/Adly";
 import Settings from "./views/Settings";
 import Audit from "./views/Audit";
+import Reports from "./views/Reports";
 import PageSpeed from "./views/PageSpeed";
 
-type ViewId = "dashboard" | "keywords" | "rankings" | "seo" | "insights" | "audit" | "speed" | "campaigns" | "searchterms" | "budget" | "adly" | "trends" | "settings";
+type ViewId = "dashboard" | "keywords" | "rankings" | "seo" | "insights" | "reports" | "audit" | "speed" | "campaigns" | "searchterms" | "budget" | "adly" | "trends" | "settings";
 
 const NAV: { id: ViewId; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▤" },
@@ -25,6 +26,7 @@ const NAV: { id: ViewId; label: string; icon: string }[] = [
   { id: "rankings", label: "Posities", icon: "↕" },
   { id: "seo", label: "SEO Analyse", icon: "◈" },
   { id: "insights", label: "Zoekanalyse", icon: "◱" },
+  { id: "reports", label: "Rapport", icon: "▦" },
   { id: "audit", label: "Audit", icon: "⌗" },
   { id: "speed", label: "Snelheid", icon: "⚡" },
   { id: "campaigns", label: "Advertenties", icon: "◧" },
@@ -77,6 +79,7 @@ export default function App() {
     rankings: <Rankings accounts={accounts} />,
     seo: <SeoAnalysis accounts={accounts} />,
     insights: <SeoInsights accounts={accounts} />,
+    reports: <Reports accounts={accounts} />,
     audit: <Audit accounts={accounts} />,
     speed: <PageSpeed />,
     campaigns: <Campaigns accounts={accounts} />,
