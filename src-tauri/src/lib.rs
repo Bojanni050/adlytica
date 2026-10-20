@@ -1,6 +1,7 @@
 mod adly;
 mod audit;
 mod config;
+mod dataforseo;
 mod pagespeed;
 mod rankings;
 mod trends;
@@ -23,6 +24,8 @@ pub struct AppState {
     pub wp_app_password: Mutex<Option<String>>,
     pub brand: Mutex<Option<serde_json::Value>>,
     pub pagespeed_api_key: Mutex<Option<String>>,
+    pub dataforseo_login: Mutex<Option<String>>,
+    pub dataforseo_password: Mutex<Option<String>>,
     pub notifications_enabled: Mutex<bool>,
     pub trends: trends::TrendsState,
 }
@@ -40,6 +43,8 @@ fn persist(state: &AppState) {
         wp_app_password: state.wp_app_password.lock().unwrap().clone(),
         brand: state.brand.lock().unwrap().clone(),
         pagespeed_api_key: state.pagespeed_api_key.lock().unwrap().clone(),
+        dataforseo_login: state.dataforseo_login.lock().unwrap().clone(),
+        dataforseo_password: state.dataforseo_password.lock().unwrap().clone(),
         notifications_enabled: *state.notifications_enabled.lock().unwrap(),
     };
     if let Err(e) = config::save(&cfg) {
@@ -59,6 +64,7 @@ pub struct SettingsStatus {
     pub wp_user: Option<String>,
     pub wp_password_set: bool,
     pub pagespeed_key_set: bool,
+    pub dataforseo_set: bool,
 }
 
 fn windsor_client(state: &AppState) -> Result<windsor::WindsorClient, String> {
@@ -115,6 +121,8 @@ async fn get_settings_status(state: State<'_, AppState>) -> Result<SettingsStatu
         wp_user: state.wp_user.lock().unwrap().clone(),
         wp_password_set: state.wp_app_password.lock().unwrap().is_some(),
         pagespeed_key_set: state.pagespeed_api_key.lock().unwrap().is_some(),
+        dataforseo_set: state.dataforseo_login.lock().unwrap().is_some()
+            && state.dataforseo_password.lock().unwrap().is_some(),
     })
 }
 
@@ -417,6 +425,42 @@ async fn pagespeed(
     pagespeed::measure(&url, &key, strategy.as_deref().unwrap_or("mobile")).await
 }
 
+#[tauri::command]
+async fn set_dataforseo(
+    login: String,
+    password: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let user = login.trim();
+    let secret = password.trim();
+    *state.dataforseo_login.lock().unwrap() = if user.is_empty() { None } else { Some(user.to_string()) };
+    *state.dataforseo_password.lock().unwrap() = if secret.is_empty() { None } else { Some(secret.to_string()) };
+    persist(&state);
+    Ok(())
+}
+
+/// Vergelijkt het eigen domein met concurrenten via de betaalde DataForSEO Labs API.
+#[tauri::command]
+async fn dataforseo_gap(
+    domains: Vec<String>,
+    limit: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<dataforseo::GapResult, String> {
+    let login = state
+        .dataforseo_login
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "Vul eerst je DataForSEO-login en wachtwoord in bij Instellingen.".to_string())?;
+    let password = state
+        .dataforseo_password
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "Vul eerst je DataForSEO-login en wachtwoord in bij Instellingen.".to_string())?;
+    dataforseo::gap(&login, &password, &domains, limit.unwrap_or(500).clamp(50, 1000)).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -433,6 +477,8 @@ async fn pagespeed(
                 wp_app_password: Mutex::new(cfg.wp_app_password),
                 brand: Mutex::new(cfg.brand),
                 pagespeed_api_key: Mutex::new(cfg.pagespeed_api_key),
+                dataforseo_login: Mutex::new(cfg.dataforseo_login),
+                dataforseo_password: Mutex::new(cfg.dataforseo_password),
                 notifications_enabled: Mutex::new(cfg.notifications_enabled),
                 trends: trends::TrendsState {
                     sidecar: Mutex::new(None),
@@ -466,6 +512,8 @@ async fn pagespeed(
             set_notifications,
             notify_now,
             test_notification,
+            set_dataforseo,
+            dataforseo_gap,
             run_audit,
             pagespeed,
             set_pagespeed_key,

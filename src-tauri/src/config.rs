@@ -22,6 +22,11 @@ pub struct AppConfig {
     /// Windows-meldingen aan of uit (instelbaar bij Instellingen).
     #[serde(default)]
     pub notifications_enabled: bool,
+    /// DataForSEO-login en -wachtwoord (betaald, optioneel).
+    #[serde(default)]
+    pub dataforseo_login: Option<String>,
+    #[serde(default)]
+    pub dataforseo_password: Option<String>,
     /// WordPress-site voor de Rank Math-koppeling, bijv. https://white-vision.nl.
     #[serde(default)]
     pub wp_url: Option<String>,
@@ -55,6 +60,8 @@ impl Default for AppConfig {
             python_path: default_python_path(),
             dashboard_layout: None,
             notifications_enabled: false,
+            dataforseo_login: None,
+            dataforseo_password: None,
             wp_url: None,
             wp_user: None,
             wp_app_password: None,

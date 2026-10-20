@@ -359,10 +359,6 @@ fn overlap(left: &[u64], right: &[u64]) -> (f64, usize) {
     }
 }
 
-fn similarity(left: &[u64], right: &[u64]) -> f64 {
-    overlap(left, right).0
-}
-
 /// Haalt zinnen weg die op bijna elke pagina staan (navigatie, footer, CTA),
 /// zodat alleen unieke inhoud overblijft voor de vergelijking.
 fn strip_boilerplate(pages: &mut [AuditPage]) {
@@ -1126,8 +1122,8 @@ mod tests {
         let a = shingles_of("de beste dj voor een bruiloft in amsterdam met live muziek en licht");
         let b = shingles_of("de beste dj voor een bruiloft in amsterdam met live muziek en licht");
         let c = shingles_of("iets heel anders over duikbrillen en onderwaterfotografie");
-        assert!(similarity(&a, &b) > 0.9);
-        assert!(similarity(&a, &c) < 0.2);
+        assert!(overlap(&a, &b).0 > 0.9);
+        assert!(overlap(&a, &c).0 < 0.2);
     }
 
     #[test]

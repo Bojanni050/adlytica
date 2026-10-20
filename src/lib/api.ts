@@ -89,6 +89,7 @@ export interface SettingsStatus {
   wp_user: string | null;
   wp_password_set: boolean;
   pagespeed_key_set: boolean;
+  dataforseo_set: boolean;
 }
 
 export async function getSettingsStatus(): Promise<SettingsStatus> {
@@ -341,4 +342,27 @@ export async function setPagespeedKey(key: string): Promise<void> {
 /** Meet een pagina met PageSpeed Insights; de Rust-kant gebruikt de bewaarde key. */
 export async function runPageSpeed(url: string, strategy: "mobile" | "desktop"): Promise<PageSpeedResult> {
   return invoke<PageSpeedResult>("pagespeed", { url, strategy });
+}
+
+export interface GapRow {
+  keyword: string;
+  volume: number;
+  ranks: (number | null)[];
+}
+
+export interface GapResult {
+  domains: string[];
+  rows: GapRow[];
+  cost: number;
+  found: number[];
+  gap_volume: number;
+}
+
+export async function setDataForSeo(login: string, password: string): Promise<void> {
+  await invoke("set_dataforseo", { login, password });
+}
+
+/** Betaalde DataForSEO-call: één Labs-taak per domein. */
+export async function dataforseoGap(domains: string[], limit = 500): Promise<GapResult> {
+  return invoke<GapResult>("dataforseo_gap", { domains, limit });
 }

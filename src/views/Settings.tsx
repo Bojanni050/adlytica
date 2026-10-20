@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   setWindsorKey, setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
   setWordpressConfig, testWordpress, setBrand, BrandConfig,
-  getNotifications, setNotifications as saveNotifications, testNotification, setPagespeedKey,
+  getNotifications, setNotifications as saveNotifications, testNotification, setDataForSeo, setPagespeedKey,
 } from "../lib/api";
 import { WHITE_LABEL_ENABLED } from "../lib/features";
 
@@ -38,6 +38,8 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
   const [brandLogo, setBrandLogo] = useState<string | null>(brand?.logo ?? null);
   const [brandMsg, setBrandMsg] = useState<string | null>(null);
   const [psKey, setPsKey] = useState("");
+  const [dfLogin, setDfLogin] = useState("");
+  const [dfPassword, setDfPassword] = useState("");
   const [notifications, setNotifications] = useState(false);
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -70,6 +72,9 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
       await setMistralConfig(mistralKey.trim(), mistralModel);
       await setWordpressConfig(wpUrl.trim(), wpUser.trim(), wpPassword.trim());
       if (psKey.trim() !== "") await setPagespeedKey(psKey.trim());
+      if (dfLogin.trim() !== "" || dfPassword.trim() !== "") {
+        await setDataForSeo(dfLogin.trim(), dfPassword.trim());
+      }
       await saveNotifications(notifications);
       const nextBrand: BrandConfig = {
         name: brandName.trim() || DEFAULT_BRAND.name,
@@ -321,6 +326,33 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
         {brandMsg && <p className="hint" style={{ color: "var(--danger)" }}>{brandMsg}</p>}
           </>
         )}
+
+        <h3 style={{ marginTop: 20 }}>DataForSEO</h3>
+        <div className="form-row">
+          <div>
+            <label className="field">Login (e-mailadres)</label>
+            <input
+              type="text"
+              value={dfLogin}
+              onChange={(e) => setDfLogin(e.target.value)}
+              placeholder={saved?.dataforseo_set ? "opgeslagen" : "naam@voorbeeld.nl"}
+            />
+          </div>
+          <div>
+            <label className="field">Wachtwoord</label>
+            <input
+              type="password"
+              value={dfPassword}
+              onChange={(e) => setDfPassword(e.target.value)}
+              placeholder={saved?.dataforseo_set ? "opgeslagen" : "API-wachtwoord"}
+            />
+          </div>
+        </div>
+        <p className="hint">
+          Alleen nodig voor de concurrent-analyse. DataForSEO werkt pay-as-you-go: ongeveer $0,012
+          per taak plus $0,00012 per keyword (minimaal $50 tegoed). Zonder deze gegevens blijft de
+          view Concurrenten uit.
+        </p>
 
         <h3 style={{ marginTop: 20 }}>Meldingen</h3>
         <div className="form-row">
