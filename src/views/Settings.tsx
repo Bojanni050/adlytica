@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   setWindsorKey, setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
   setWordpressConfig, testWordpress, setBrand, BrandConfig,
+  getNotifications, setNotifications as saveNotifications, testNotification,
 } from "../lib/api";
 import { WHITE_LABEL_ENABLED } from "../lib/features";
 
@@ -36,6 +37,8 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
   const [brandFooter, setBrandFooter] = useState(brand?.footer ?? DEFAULT_BRAND.footer);
   const [brandLogo, setBrandLogo] = useState<string | null>(brand?.logo ?? null);
   const [brandMsg, setBrandMsg] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState(false);
+  const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [saved, setSaved] = useState<SettingsStatus | null>(null);
 
@@ -50,6 +53,7 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
       if (st.wp_url) setWpUrl(st.wp_url);
       if (st.wp_user) setWpUser(st.wp_user);
     }).catch(() => undefined);
+    getNotifications().then(setNotifications).catch(() => undefined);
   }, []);
 
   async function save() {
@@ -64,6 +68,7 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
       await setPythonPath(pythonPath);
       await setMistralConfig(mistralKey.trim(), mistralModel);
       await setWordpressConfig(wpUrl.trim(), wpUser.trim(), wpPassword.trim());
+      await saveNotifications(notifications);
       const nextBrand: BrandConfig = {
         name: brandName.trim() || DEFAULT_BRAND.name,
         accent: brandAccent,
@@ -297,6 +302,41 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
         {brandMsg && <p className="hint" style={{ color: "var(--danger)" }}>{brandMsg}</p>}
           </>
         )}
+
+        <h3 style={{ marginTop: 20 }}>Meldingen</h3>
+        <div className="form-row">
+          <div>
+            <label className="field" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={notifications}
+                onChange={(e) => setNotifications(e.target.checked)}
+              />
+              Windows-meldingen tonen
+            </label>
+          </div>
+        </div>
+        <p className="hint">
+          Je krijgt één melding per dag als er pagina's of zoektermen zijn die week-op-week 30% of
+          meer zijn gezakt. De melding verschijnt ook als Adlytica op de achtergrond staat.
+        </p>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <button
+            className="ghost"
+            type="button"
+            onClick={async () => {
+              try {
+                await testNotification();
+                setNotifyMsg("Testmelding verstuurd.");
+              } catch (e) {
+                setNotifyMsg(`Fout: ${e}`);
+              }
+            }}
+          >
+            Testmelding
+          </button>
+          {notifyMsg && <span className="hint" style={{ margin: 0 }}>{notifyMsg}</span>}
+        </div>
 
         <div style={{ marginTop: 20 }}>
           <button className="primary" onClick={save}>Opslaan</button>

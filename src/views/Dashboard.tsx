@@ -3,7 +3,8 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { windsorQuery, num, fmt, dateNDaysAgo, QueryParams, Row } from "../lib/api";
+import { windsorQuery, num, fmt, dateNDaysAgo, QueryParams, Row, notifyNow } from "../lib/api";
+import { exportPdf } from "../lib/pdf";
 import {
   DashboardLayout, defaultLayout, loadDashboardLayout, moveVisibleWidget,
   resetDashboardLayout, reorderWidgets, saveDashboardLayout,
@@ -800,6 +801,8 @@ export default function Dashboard({ accounts }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfMsg, setPdfMsg] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
   const [layout, setLayout] = useState<DashboardLayout>(() => defaultLayout(WIDGET_IDS));
@@ -894,6 +897,28 @@ export default function Dashboard({ accounts }: Props) {
       setUpdatedAt(new Date());
       setLoading(false);
       setLoadedOnce(true);
+
+      // Eén melding per dag, alleen als er echt iets opvalt.
+      try {
+        const pageDrops = findAnomalies(pageDaily, "page").length;
+        const queryDrops = findAnomalies(queryDaily, "query").length;
+        const total = pageDrops + queryDrops;
+        if (total > 0) {
+          const dayKey = `adlytica.notified.${new Date().toISOString().slice(0, 10)}`;
+          if (localStorage.getItem(dayKey) !== String(total)) {
+            localStorage.setItem(dayKey, String(total));
+            const parts: string[] = [];
+            if (pageDrops > 0) parts.push(`${pageDrops} pagina${pageDrops === 1 ? "" : "'s"}`);
+            if (queryDrops > 0) parts.push(`${queryDrops} zoekterm${queryDrops === 1 ? "" : "en"}`);
+            void notifyNow(
+              "Adlytica — dalingen deze week",
+              `${parts.join(" en ")} zakten met 30% of meer. Open het dashboard voor de details.`
+            ).catch(() => undefined);
+          }
+        }
+      } catch {
+        // Een mislukte melding mag het dashboard nooit blokkeren.
+      }
     }
 
     load();
@@ -967,6 +992,64 @@ export default function Dashboard({ accounts }: Props) {
     setLayout((current) => ({ ...current, rangeDays: days }));
   }
 
+  async function exportReport() {
+    setPdfBusy(true);
+    setPdfMsg(null);
+    try {
+      const stamp = new Date().toISOString().slice(0, 10);
+      const topPages = [...data.pages]
+        .sort((a, b) => num(b.clicks) - num(a.clicks))
+        .slice(0, 10)
+        .map((r) => [
+          pathLabel(r.page), fmt(num(r.clicks), 0), fmt(num(r.impressions), 0),
+          `${fmt(num(r.ctr), 1)}%`, fmt(num(r.position), 1),
+        ]);
+      const topQueries = [...data.queries]
+        .sort((a, b) => num(b.clicks) - num(a.clicks))
+        .slice(0, 10)
+        .map((r) => [
+          String(r.query ?? ""), fmt(num(r.clicks), 0), fmt(num(r.impressions), 0),
+          `${fmt(num(r.ctr), 1)}%`, fmt(num(r.position), 1),
+        ]);
+      const drops = [...findAnomalies(data.pageDaily, "page"), ...findAnomalies(data.queryDaily, "query")]
+        .slice(0, 10)
+        .map((item) => [
+          pathLabel(item.key), fmt(item.previous, 0), fmt(item.current, 0),
+          `−${Math.round(item.drop * 100)}%`, fmt(item.position, 1),
+        ]);
+
+      const path = await exportPdf({
+        title: "Dashboard",
+        subtitle: `Search Console, Google Ads en GA4 · laatste ${rangeDays} dagen`,
+        kpis: [
+          { label: "Organische klikken", value: fmt(totals(data.gsc, "clicks"), 0) },
+          { label: "Impressies", value: fmt(totals(data.gsc, "impressions"), 0) },
+          { label: "Advertentiekosten", value: `€ ${fmt(totals(data.ads, "spend"), 2)}` },
+          { label: "Conversies", value: fmt(totals(data.ads, "conversions"), 0) },
+          { label: "Sessies", value: fmt(totals(data.ga4, "sessions"), 0) },
+          { label: "Gebruikers", value: fmt(totals(data.ga4, "users"), 0) },
+        ],
+        sections: [
+          { title: "Top pagina's", head: ["Pagina", "Klikken", "Impressies", "CTR", "Positie"], rows: topPages },
+          { title: "Top zoektermen", head: ["Zoekterm", "Klikken", "Impressies", "CTR", "Positie"], rows: topQueries },
+          {
+            title: "Dalingen week-op-week",
+            head: ["Pagina of zoekterm", "Vorige week", "Deze week", "Daling", "Positie"],
+            rows: drops,
+            note: drops.length === 0 ? "Geen dalingen van 30% of meer gevonden." : undefined,
+          },
+        ],
+        filename: `adlytica-dashboard-${stamp}.pdf`,
+      });
+      setPdfMsg(`Opgeslagen: ${path}`);
+    } catch (e) {
+      setPdfMsg(null);
+      setError(String(e));
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   return (
     <div className={editMode ? "dashboard edit-mode" : "dashboard"}>
       <div className="dash-header">
@@ -993,6 +1076,9 @@ export default function Dashboard({ accounts }: Props) {
               Bijgewerkt {updatedAt.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
+          {pdfMsg && (
+            <span className="dash-updated" title={pdfMsg}>PDF opgeslagen</span>
+          )}
           <button
             type="button"
             className="ghost icon-btn"
@@ -1002,6 +1088,15 @@ export default function Dashboard({ accounts }: Props) {
             aria-label="Data verversen"
           >
             <span className={loading ? "spin" : undefined}>↻</span>
+          </button>
+          <button
+            type="button"
+            className="ghost"
+            onClick={exportReport}
+            disabled={pdfBusy || !loadedOnce}
+            title="Rapport als PDF opslaan"
+          >
+            {pdfBusy ? "PDF…" : "⬇ PDF"}
           </button>
           {editMode ? (
             <>

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { windsorQuery, num, fmt, Row } from "../lib/api";
+import { exportPdf } from "../lib/pdf";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -52,6 +53,8 @@ export default function Budget({ accounts }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfMsg, setPdfMsg] = useState<string | null>(null);
   const [onlyActive, setOnlyActive] = useState(true);
   const month = useMemo(monthInfo, [reloadKey]);
 
@@ -123,6 +126,50 @@ export default function Budget({ accounts }: Props) {
     { spend: 0, dailyBudget: 0, projected: 0, monthBudget: 0, over: 0, under: 0 }
   );
 
+  async function exportReport() {
+    setPdfBusy(true);
+    setPdfMsg(null);
+    try {
+      const stamp = new Date().toISOString().slice(0, 10);
+      const path = await exportPdf({
+        title: "Budget en pacing",
+        subtitle: `${month.label} — dag ${month.day} van ${month.daysInMonth}`,
+        kpis: [
+          { label: "Besteed deze maand", value: `€ ${fmt(totals.spend, 0)}` },
+          { label: "Dagbudget samen", value: `€ ${fmt(totals.dailyBudget, 0)}` },
+          { label: "Verwachte maandkosten", value: `€ ${fmt(totals.projected, 0)}` },
+          { label: "Over budget", value: String(totals.over) },
+          { label: "Onder budget", value: String(totals.under) },
+        ],
+        sections: [
+          {
+            title: "Pacing per campagne",
+            head: ["Campagne", "Dagbudget", "Besteed", "Verwacht nu", "Projectie", "Pacing", "Status"],
+            rows: visible.map((row) => {
+              const pace = pacing(row, month.day);
+              return [
+                row.name,
+                `€ ${fmt(row.dailyBudget, 2)}`,
+                `€ ${fmt(row.spend, 2)}`,
+                `€ ${fmt(row.dailyBudget * month.day, 2)}`,
+                `€ ${fmt(month.day > 0 ? (row.spend / month.day) * month.daysInMonth : 0, 2)}`,
+                `${fmt(pace.ratio * 100, 0)}%`,
+                pace.label,
+              ];
+            }),
+            note: "Verwacht nu = dagbudget × verstreken dagen. Projectie rekent het huidige tempo door naar de hele maand.",
+          },
+        ],
+        filename: `adlytica-budget-${stamp}.pdf`,
+      });
+      setPdfMsg(`Opgeslagen: ${path}`);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   return (
     <div>
       <h1>Budget</h1>
@@ -166,7 +213,11 @@ export default function Budget({ accounts }: Props) {
         <button className="ghost" onClick={() => setReloadKey((k) => k + 1)} disabled={loading}>
           {loading ? "Vernieuwen…" : "↻ Vernieuwen"}
         </button>
+        <button className="ghost" onClick={exportReport} disabled={pdfBusy || visible.length === 0}>
+          {pdfBusy ? "PDF…" : "⬇ PDF"}
+        </button>
       </div>
+      {pdfMsg && <p className="hint" style={{ marginTop: 8 }}>{pdfMsg}</p>}
 
       {loading ? (
         <div className="loading">Budgetten laden…</div>

@@ -20,6 +20,7 @@ pub struct AppState {
     pub wp_user: Mutex<Option<String>>,
     pub wp_app_password: Mutex<Option<String>>,
     pub brand: Mutex<Option<serde_json::Value>>,
+    pub notifications_enabled: Mutex<bool>,
     pub trends: trends::TrendsState,
 }
 
@@ -35,6 +36,7 @@ fn persist(state: &AppState) {
         wp_user: state.wp_user.lock().unwrap().clone(),
         wp_app_password: state.wp_app_password.lock().unwrap().clone(),
         brand: state.brand.lock().unwrap().clone(),
+        notifications_enabled: *state.notifications_enabled.lock().unwrap(),
     };
     if let Err(e) = config::save(&cfg) {
         eprintln!("Config niet opgeslagen: {e}");
@@ -312,9 +314,73 @@ async fn set_brand(
     Ok(())
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+#[tauri::command]
+async fn get_notifications(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(*state.notifications_enabled.lock().unwrap())
+}
+
+#[tauri::command]
+async fn set_notifications(enabled: bool, state: State<'_, AppState>) -> Result<(), String> {
+    *state.notifications_enabled.lock().unwrap() = enabled;
+    persist(&state);
+    Ok(())
+}
+
+/// Toont een Windows-melding, maar alleen als de gebruiker ze heeft aangezet.
+#[tauri::command]
+async fn notify_now(
+    title: String,
+    body: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if !*state.notifications_enabled.lock().unwrap() {
+        return Ok(());
+    }
+    show_notification(&app, &title, &body)
+}
+
+/// Testmelding vanuit Instellingen; negeert de schakelaar zodat je hem kunt proberen.
+#[tauri::command]
+async fn test_notification(app: tauri::AppHandle) -> Result<(), String> {
+    show_notification(
+        &app,
+        "Adlytica",
+        "Meldingen werken. Je krijgt bericht zodra er iets opvalt in je data.",
+    )
+}
+
+/// Schrijft een PDF die de frontend heeft opgebouwd naar de map Downloads.
+#[tauri::command]
+async fn save_pdf(filename: String, bytes: Vec<u8>) -> Result<String, String> {
+    let safe: String = filename
+        .chars()
+        .map(|c| if c.is_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '-' })
+        .collect();
+    let name = if safe.to_lowercase().ends_with(".pdf") { safe } else { format!("{safe}.pdf") };
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or_else(|| "Kon de thuismap niet bepalen".to_string())?;
+    let base = std::path::PathBuf::from(home);
+    let downloads = base.join("Downloads");
+    let dir = if downloads.is_dir() { downloads } else { base };
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).map_err(|e| format!("Kon het PDF-bestand niet opslaan: {e}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+fn show_notification(app: &tauri::AppHandle, title: &str, body: &str) -> Result<(), String> {    use tauri_plugin_notification::NotificationExt;
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|e| format!("Melding kon niet worden getoond: {e}"))
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage({
             let cfg = config::load();
             AppState {
@@ -327,6 +393,7 @@ pub fn run() {
                 wp_user: Mutex::new(cfg.wp_user),
                 wp_app_password: Mutex::new(cfg.wp_app_password),
                 brand: Mutex::new(cfg.brand),
+                notifications_enabled: Mutex::new(cfg.notifications_enabled),
                 trends: trends::TrendsState {
                     sidecar: Mutex::new(None),
                     python: Mutex::new(cfg.python_path),
@@ -354,7 +421,12 @@ pub fn run() {
             get_wp_seo,
             set_wp_seo,
             get_brand,
-            set_brand
+            set_brand,
+            get_notifications,
+            set_notifications,
+            notify_now,
+            test_notification,
+            save_pdf
         ])
         .run(tauri::generate_context!())
         .expect("Adlytica kon niet starten");

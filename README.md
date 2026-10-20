@@ -16,6 +16,8 @@ Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Googl
 - **Google Trends** — zoekinteresse over tijd en gerelateerde/opkomende zoektermen (via pytrends)
 - **Adly (AI-assistent)** — chat met je AI-collega voor SEO-advies en campagnehulp; verstuurt optioneel je actuele Search Console- en campagnedata mee voor data-gedreven antwoorden (Mistral API)
 - **Wit-label** — eigen app-naam, accentkleur, voettekst en logo (png/jpeg/webp/svg tot 400 kB) instellen bij Instellingen; logo wordt als data-URL in `config.json` bewaard en de accentkleur werkt direct door in menu, knoppen en randen
+- **Meldingen** — Windows-melding zodra het dashboard pagina's of zoektermen vindt die week-op-week 30% of meer zijn gezakt (maximaal één per dag); aan/uit te zetten bij Instellingen, met een testknop
+- **PDF-rapporten** — de knop **⬇ PDF** op het dashboard en bij Budget bouwt een eigen rapport (kerncijfers, top pagina's en zoektermen, dalingen of pacing) en schrijft dat naar je map Downloads; de app meldt het volledige pad
 - **Snel navigeren** — druk op Ctrl+K (of gebruik "Snel naar…" in de zijbalk) om met je toetsenbord naar elke view te springen
 
 ## Vereisten

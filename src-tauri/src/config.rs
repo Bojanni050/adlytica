@@ -19,6 +19,9 @@ pub struct AppConfig {
     /// Volgorde en verborgen widgets van het dashboard, zoals de frontend ze aanlevert.
     #[serde(default)]
     pub dashboard_layout: Option<serde_json::Value>,
+    /// Windows-meldingen aan of uit (instelbaar bij Instellingen).
+    #[serde(default)]
+    pub notifications_enabled: bool,
     /// WordPress-site voor de Rank Math-koppeling, bijv. https://white-vision.nl.
     #[serde(default)]
     pub wp_url: Option<String>,
@@ -48,6 +51,7 @@ impl Default for AppConfig {
             accounts: HashMap::new(),
             python_path: default_python_path(),
             dashboard_layout: None,
+            notifications_enabled: false,
             wp_url: None,
             wp_user: None,
             wp_app_password: None,

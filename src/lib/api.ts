@@ -192,3 +192,25 @@ export function dateNDaysAgo(n: number): string {
   d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
 }
+
+export async function getNotifications(): Promise<boolean> {
+  return invoke<boolean>("get_notifications");
+}
+
+export async function setNotifications(enabled: boolean): Promise<void> {
+  await invoke("set_notifications", { enabled });
+}
+
+/** Toont een Windows-melding; de Rust-kant negeert hem als meldingen uit staan. */
+export async function notifyNow(title: string, body: string): Promise<void> {
+  await invoke("notify_now", { title, body });
+}
+
+export async function testNotification(): Promise<void> {
+  await invoke("test_notification");
+}
+
+/** Schrijft een door de frontend opgebouwde PDF naar de map Downloads en geeft het pad terug. */
+export async function savePdf(filename: string, bytes: number[]): Promise<string> {
+  return invoke<string>("save_pdf", { filename, bytes });
+}
