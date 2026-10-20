@@ -3,7 +3,11 @@ import {
   adlyChat, windsorAction, windsorQuery, num, dateNDaysAgo, ChatMessage,
 } from "../lib/api";
 
-interface Props { accounts: Record<string, string>; }
+interface Props {
+  accounts: Record<string, string>;
+  /** Compacte opmaak voor de zijbalk: geen grote paginakop. */
+  compact?: boolean;
+}
 
 interface AdlyAction {
   action: string;
@@ -59,7 +63,7 @@ function parseAction(text: string): { action: AdlyAction; rest: string } | null 
   }
 }
 
-export default function Adly({ accounts }: Props) {
+export default function AdlyChat({ accounts, compact = false }: Props) {
   const [messages, setMessages] = useState<UIMessage[]>(loadHistory);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -195,34 +199,54 @@ export default function Adly({ accounts }: Props) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div className="adly-header">
-        <div>
-          <h1>Adly — AI-assistent</h1>
-          <p className="subtitle" style={{ marginBottom: 0 }}>
-            Je AI-collega voor SEO en Google Ads
-            {contextInfo ? ` · context: ${contextInfo}` : ""}
-          </p>
+    <div className={compact ? "adly-chat compact" : "adly-chat"}>
+      {!compact && (
+        <div className="adly-header">
+          <div>
+            <h1>Adly — AI-assistent</h1>
+            <p className="subtitle" style={{ marginBottom: 0 }}>
+              Je AI-collega voor SEO en Google Ads
+              {contextInfo ? ` · context: ${contextInfo}` : ""}
+            </p>
+          </div>
+          {messages.length > 0 && (
+            <button className="ghost" onClick={clearHistory}>Geschiedenis wissen</button>
+          )}
         </div>
-        {messages.length > 0 && (
-          <button className="ghost" onClick={clearHistory}>Geschiedenis wissen</button>
-        )}
-      </div>
+      )}
 
-      <div className="chat-toolbar">
-        <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: 12 }}>
-          <input
-            type="checkbox" checked={withContext}
-            onChange={(e) => setWithContext(e.target.checked)}
-          />
-          Stuur actuele SEO- en campagnedata mee
-        </label>
-      </div>
+      {compact ? (
+        <div className="adly-compact-tools">
+          <label>
+            <input
+              type="checkbox"
+              checked={withContext}
+              onChange={(e) => setWithContext(e.target.checked)}
+            />
+            Data meesturen
+          </label>
+          {messages.length > 0 && (
+            <button className="link" type="button" onClick={clearHistory}>Wissen</button>
+          )}
+        </div>
+      ) : (
+        <div className="chat-toolbar">
+          <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--muted)", fontSize: 12 }}>
+            <input
+              type="checkbox" checked={withContext}
+              onChange={(e) => setWithContext(e.target.checked)}
+            />
+            Stuur actuele SEO- en campagnedata mee
+          </label>
+        </div>
+      )}
+
+      {compact && contextInfo && <p className="hint adly-context">{contextInfo}</p>}
 
       <div className="chat-window">
         {messages.length === 0 && (
           <div className="chat-empty">
-            <div style={{ fontSize: 28 }}>◉</div>
+            <div style={{ fontSize: compact ? 24 : 28 }}>◉</div>
             <p>Hoi! Ik ben Adly. Vraag me anything over je SEO of advertenties.</p>
             <div className="chat-suggestions">
               {SUGGESTIONS.map((s) => (

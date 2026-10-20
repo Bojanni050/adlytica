@@ -3,6 +3,7 @@ import { getAccounts, getBrand, BrandConfig } from "./lib/api";
 import { DEFAULT_ACCOUNTS } from "./lib/constants";
 import { WHITE_LABEL_ENABLED } from "./lib/features";
 import CommandPalette from "./components/CommandPalette";
+import AdlyPanel from "./components/AdlyPanel";
 import Dashboard from "./views/Dashboard";
 import KeywordSearch from "./views/KeywordSearch";
 import Rankings from "./views/Rankings";
@@ -12,13 +13,12 @@ import Campaigns from "./views/Campaigns";
 import Budget from "./views/Budget";
 import SearchTerms from "./views/SearchTerms";
 import Trends from "./views/Trends";
-import Adly from "./views/Adly";
 import Settings from "./views/Settings";
 import Audit from "./views/Audit";
 import Reports from "./views/Reports";
 import PageSpeed from "./views/PageSpeed";
 
-type ViewId = "dashboard" | "keywords" | "rankings" | "seo" | "insights" | "reports" | "audit" | "speed" | "campaigns" | "searchterms" | "budget" | "adly" | "trends" | "settings";
+type ViewId = "dashboard" | "keywords" | "rankings" | "seo" | "insights" | "reports" | "audit" | "speed" | "campaigns" | "searchterms" | "budget" | "trends" | "settings";
 
 const NAV: { id: ViewId; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▤" },
@@ -32,7 +32,6 @@ const NAV: { id: ViewId; label: string; icon: string }[] = [
   { id: "campaigns", label: "Advertenties", icon: "◧" },
   { id: "budget", label: "Budget", icon: "◔" },
   { id: "searchterms", label: "Zoektermen", icon: "⊘" },
-  { id: "adly", label: "Adly AI", icon: "✦" },
   { id: "trends", label: "Google Trends", icon: "∿" },
   { id: "settings", label: "Instellingen", icon: "⚙" },
 ];
@@ -85,7 +84,6 @@ export default function App() {
     campaigns: <Campaigns accounts={accounts} />,
     budget: <Budget accounts={accounts} />,
     searchterms: <SearchTerms accounts={accounts} />,
-    adly: <Adly accounts={accounts} />,
     trends: <Trends />,
     settings: (
       <Settings
@@ -130,6 +128,7 @@ export default function App() {
         <div className="sidebar-footer">{brand?.footer || "v0.1.0 — White Vision"}</div>
       </aside>
       <main className="content">{views[view]}</main>
+      <AdlyPanel accounts={accounts} />
       <CommandPalette
         open={paletteOpen}
         items={NAV.map((item) => ({ id: item.id, label: item.label, icon: item.icon }))}
