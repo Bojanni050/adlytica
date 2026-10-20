@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { runAudit, AuditPage, AuditResult } from "../lib/api";
+import { exportPdf } from "../lib/pdf";
 
 type Filter = "all" | "error" | "warning" | "clean";
 
@@ -30,6 +31,8 @@ export default function Audit() {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfMsg, setPdfMsg] = useState<string | null>(null);
 
   async function start() {
     if (busy) return;
@@ -46,6 +49,61 @@ export default function Audit() {
       setError(String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function exportReport() {
+    if (!result) return;
+    setPdfBusy(true);
+    setPdfMsg(null);
+    try {
+      const host = (() => {
+        try {
+          return new URL(result.base).hostname;
+        } catch {
+          return result.base;
+        }
+      })();
+      const stamp = new Date().toISOString().slice(0, 10);
+      const withIssues = result.pages.filter((page) => page.issues.length > 0);
+      const rows = withIssues.slice(0, 80).map((page) => {
+        const problems = page.issues
+          .map((item) => `${item.severity === "error" ? "fout" : "let op"}: ${item.message}`)
+          .join("; ");
+        return [shortPath(page), String(page.status), String(page.errors), String(page.warnings), problems];
+      });
+      const path = await exportPdf({
+        title: "Technische audit",
+        subtitle: `${host} · ${result.crawled} pagina's · ${(result.duration_ms / 1000).toFixed(1)} s`,
+        kpis: [
+          { label: "Pagina's", value: String(totals.pages) },
+          { label: "Fouten", value: String(totals.errors) },
+          { label: "Waarschuwingen", value: String(totals.warnings) },
+          { label: "Zonder meta", value: String(totals.noMeta) },
+          { label: "Zonder H1", value: String(totals.noH1) },
+        ],
+        sections: [
+          {
+            title: "Site-brede controles",
+            head: ["Controle", "Status", "Toelichting"],
+            rows: result.checks.map((check) => [check.label, check.ok ? "in orde" : "aandacht", check.detail]),
+          },
+          {
+            title: "Bevindingen per pagina",
+            head: ["Pagina", "Status", "Fouten", "Let op", "Bevindingen"],
+            rows,
+            note: withIssues.length === 0
+              ? "Geen problemen gevonden op de gecontroleerde pagina's."
+              : `${withIssues.length} van ${result.pages.length} pagina's hebben aandachtspunten${withIssues.length > rows.length ? ` (eerste ${rows.length} in dit rapport)` : ""}.`,
+          },
+        ],
+        filename: `adlytica-audit-${host}-${stamp}.pdf`,
+      });
+      setPdfMsg(`Opgeslagen: ${path}`);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setPdfBusy(false);
     }
   }
 
@@ -112,6 +170,9 @@ export default function Audit() {
         <button className="primary" onClick={start} disabled={busy || url.trim() === ""}>
           {busy ? "Bezig…" : "Start audit"}
         </button>
+        <button className="ghost" onClick={exportReport} disabled={pdfBusy || !result || busy}>
+          {pdfBusy ? "PDF…" : "⬇ PDF"}
+        </button>
       </div>
 
       {busy && (
@@ -120,6 +181,7 @@ export default function Audit() {
         </p>
       )}
       {error && <p className="hint" style={{ color: "var(--danger)" }}>{error}</p>}
+      {pdfMsg && <p className="hint">{pdfMsg}</p>}
 
       {!result && !busy && (
         <div className="card">
