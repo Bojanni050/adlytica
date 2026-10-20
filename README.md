@@ -12,6 +12,7 @@ Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Googl
 - **SEO Analyse** — best presterende pagina's, zoektermen per pagina en automatisch gedetecteerde kansen (positie 5–20); per pagina opent de knop **Rank Math** een paneel waarin je de SEO-titel en meta-omschrijving bekijkt en direct naar WordPress wegschrijft
 - **Advertenties** — campagne-overzicht (30 dagen, inclusief gepauzeerd), pauzeren/activeren en nieuwe campagnes + ad groups aanmaken
 - **Zoektermen** — zoektermen uit Google Ads met kosten en conversies, beoordeeld als negative-kandidaat (minimaal €1 kosten en nul conversies); vink ze aan en push ze per campagne als negative keyword (broad, phrase of exact), of kopieer de lijst voor handmatige invoer
+- **Budget** — pacing per campagne voor de huidige maand: dagbudget, besteed-bedrag, verwacht bedrag tot nu, projectie naar het einde van de maand en een balk met de verhouding (rood over, geel onder, groen op schema)
 - **Google Trends** — zoekinteresse over tijd en gerelateerde/opkomende zoektermen (via pytrends)
 - **Adly (AI-assistent)** — chat met je AI-collega voor SEO-advies en campagnehulp; verstuurt optioneel je actuele Search Console- en campagnedata mee voor data-gedreven antwoorden (Mistral API)
 - **Snel navigeren** — druk op Ctrl+K (of gebruik "Snel naar…" in de zijbalk) om met je toetsenbord naar elke view te springen

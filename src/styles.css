@@ -974,3 +974,22 @@ label.field { display: block; color: var(--muted); font-size: 12px; margin-botto
 }
 
 .palette-foot b { color: var(--text); font-weight: 600; }
+
+/* Budget-pacing */
+.pace-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.pace-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.pace-fill.green { background: var(--accent-2); }
+.pace-fill.yellow { background: var(--warn); }
+.pace-fill.red { background: var(--danger); }
+.pace-fill.blue { background: var(--muted); }
