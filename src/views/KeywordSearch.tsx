@@ -111,7 +111,7 @@ export default function KeywordSearch({ accounts }: Props) {
         if (pageUrl.trim() !== "") options.page_url = pageUrl.trim();
         const planner = windsorQuery({
           connector: "google_ads", account: accounts.google_ads,
-          fields: ["keyword_text", "monthly_search_volume", "competition", "low_top_of_page_bid", "high_top_of_page_bid"],
+          fields: ["keyword", "avg_monthly_searches", "competition_index"],
           options, limit: 500,
         });
         // De gratis gap: welke ideeën je al rankt (en waar) volgens Search Console.
@@ -180,7 +180,7 @@ export default function KeywordSearch({ accounts }: Props) {
           const cells = [
             keywordOf(row, mode),
             fmt(num(row.monthly_search_volume ?? row.avg_monthly_searches ?? row.search_volume ?? 0), 0),
-            String(row.competition ?? row.competition_level ?? ""),
+            String(row.competition ?? row.competition_index ?? row.competition_level ?? ""),
           ];
           if (hasPositions) cells.push(hit ? `#${hit.position.toFixed(1)}` : "nog niet");
           return cells;
@@ -425,7 +425,7 @@ export default function KeywordSearch({ accounts }: Props) {
                 {visible.slice(0, 200).map((r, i) => {
                   const kw = r.keyword_text ?? r.keyword ?? r.search_term ?? "";
                   const vol = r.monthly_search_volume ?? r.avg_monthly_searches ?? r.search_volume ?? 0;
-                  const comp = r.competition ?? r.competition_level ?? "";
+                  const comp = r.competition ?? r.competition_index ?? r.competition_level ?? "";
                   const low = r.low_top_of_page_bid ?? r.low_top_of_page_bid_micros ?? 0;
                   const high = r.high_top_of_page_bid ?? r.high_top_of_page_bid_micros ?? 0;
                   return (

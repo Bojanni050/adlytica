@@ -232,10 +232,10 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
         const rows = await windsorQuery({
           connector: "googleanalytics4",
           account: accounts.googleanalytics4,
-          fields: ["session_source", "sessions"],
+          fields: ["source", "sessions"],
           date_from: from,
           date_to: to,
-          group_by: ["session_source"],
+          group_by: ["source"],
           limit: 100,
         });
         sections.push({
@@ -244,7 +244,7 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
           rows: [...rows]
             .sort((a, b) => num(b.sessions) - num(a.sessions))
             .slice(0, 15)
-            .map((row) => [String(row.session_source ?? ""), fmt(num(row.sessions), 0)]),
+            .map((row) => [String(row.source ?? ""), fmt(num(row.sessions), 0)]),
         });
       }
 
