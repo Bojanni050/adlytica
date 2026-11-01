@@ -1,11 +1,11 @@
 mod adly;
+mod analytics;
 mod audit;
 mod config;
 mod dataforseo;
 mod pagespeed;
 mod rankings;
 mod trends;
-mod windsor;
 mod wordpress;
 
 use std::collections::HashMap;
@@ -14,7 +14,8 @@ use tauri::State;
 
 #[derive(Default)]
 pub struct AppState {
-    pub windsor_api_key: Mutex<Option<String>>,
+    pub analytics_base_url: Mutex<Option<String>>,
+    pub analytics_token: Mutex<Option<String>>,
     pub mistral_api_key: Mutex<Option<String>>,
     pub mistral_model: Mutex<String>,
     pub accounts: Mutex<HashMap<String, String>>,
@@ -32,7 +33,8 @@ pub struct AppState {
 
 fn persist(state: &AppState) {
     let cfg = config::AppConfig {
-        windsor_api_key: state.windsor_api_key.lock().unwrap().clone(),
+        analytics_base_url: state.analytics_base_url.lock().unwrap().clone(),
+        analytics_token: state.analytics_token.lock().unwrap().clone(),
         mistral_api_key: state.mistral_api_key.lock().unwrap().clone(),
         mistral_model: state.mistral_model.lock().unwrap().clone(),
         accounts: state.accounts.lock().unwrap().clone(),
@@ -54,7 +56,8 @@ fn persist(state: &AppState) {
 
 #[derive(serde::Serialize)]
 pub struct SettingsStatus {
-    pub windsor_key_set: bool,
+    pub analytics_base_url: Option<String>,
+    pub analytics_token_set: bool,
     pub mistral_key_set: bool,
     pub mistral_model: String,
     pub accounts: HashMap<String, String>,
@@ -67,26 +70,41 @@ pub struct SettingsStatus {
     pub dataforseo_set: bool,
 }
 
-fn windsor_client(state: &AppState) -> Result<windsor::WindsorClient, String> {
-    let key = state
-        .windsor_api_key
+fn analytics_client(state: &AppState) -> Result<analytics::AnalyticsClient, String> {
+    let token = state
+        .analytics_token
         .lock()
         .unwrap()
         .clone()
-        .ok_or_else(|| "Geen Windsor.ai API-key ingesteld. Ga naar Instellingen.".to_string())?;
-    Ok(windsor::WindsorClient::new(key))
+        .ok_or_else(|| "Geen databron-token ingesteld. Ga naar Instellingen.".to_string())?;
+    let base = state.analytics_base_url.lock().unwrap().clone();
+    Ok(analytics::AnalyticsClient::new(base, token))
 }
 
 #[tauri::command]
-async fn set_windsor_key(
-    key: String,
+async fn set_analytics_config(
+    base_url: String,
+    token: String,
     accounts: HashMap<String, String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    *state.windsor_api_key.lock().unwrap() = Some(key);
+    if !base_url.trim().is_empty() {
+        *state.analytics_base_url.lock().unwrap() = Some(base_url.trim().to_string());
+    }
+    if !token.trim().is_empty() {
+        *state.analytics_token.lock().unwrap() = Some(token.trim().to_string());
+    }
     *state.accounts.lock().unwrap() = accounts;
     persist(&state);
     Ok(())
+}
+
+/// Test de databron: GET /health van de analytics-service.
+#[tauri::command]
+async fn test_analytics(state: State<'_, AppState>) -> Result<String, String> {
+    let client = analytics_client(&state)?;
+    let version = client.health().await.map_err(|e| e.to_string())?;
+    Ok(format!("✓ Databron bereikbaar (versie {version})"))
 }
 
 #[tauri::command]
@@ -111,7 +129,13 @@ async fn get_accounts(state: State<'_, AppState>) -> Result<HashMap<String, Stri
 #[tauri::command]
 async fn get_settings_status(state: State<'_, AppState>) -> Result<SettingsStatus, String> {
     Ok(SettingsStatus {
-        windsor_key_set: state.windsor_api_key.lock().unwrap().is_some(),
+        analytics_base_url: state
+            .analytics_base_url
+            .lock()
+            .unwrap()
+            .clone()
+            .or_else(|| Some(analytics::DEFAULT_BASE_URL.to_string())),
+        analytics_token_set: state.analytics_token.lock().unwrap().is_some(),
         mistral_key_set: state.mistral_api_key.lock().unwrap().is_some(),
         mistral_model: state.mistral_model.lock().unwrap().clone(),
         accounts: state.accounts.lock().unwrap().clone(),
@@ -240,11 +264,11 @@ async fn record_rank_points(points: Vec<rankings::RankPayload>) -> Result<rankin
 }
 
 #[tauri::command]
-async fn windsor_query(
-    params: windsor::QueryParams,
+async fn analytics_query(
+    params: analytics::QueryParams,
     state: State<'_, AppState>,
-) -> Result<windsor::QueryResult, String> {
-    let client = windsor_client(&state)?;
+) -> Result<analytics::QueryResult, String> {
+    let client = analytics_client(&state)?;
     client
         .get_data(&params)
         .await
@@ -252,14 +276,14 @@ async fn windsor_query(
 }
 
 #[tauri::command]
-async fn windsor_action(
+async fn analytics_action(
     connector: String,
     account: String,
     action: String,
     params: serde_json::Value,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let client = windsor_client(&state)?;
+    let client = analytics_client(&state)?;
     client
         .execute_action(&connector, &account, &action, &params)
         .await
@@ -467,7 +491,8 @@ async fn dataforseo_gap(
         .manage({
             let cfg = config::load();
             AppState {
-                windsor_api_key: Mutex::new(cfg.windsor_api_key),
+                analytics_base_url: Mutex::new(cfg.analytics_base_url),
+                analytics_token: Mutex::new(cfg.analytics_token),
                 mistral_api_key: Mutex::new(cfg.mistral_api_key),
                 mistral_model: Mutex::new(cfg.mistral_model),
                 accounts: Mutex::new(cfg.accounts),
@@ -487,12 +512,13 @@ async fn dataforseo_gap(
             }
         })
         .invoke_handler(tauri::generate_handler![
-            set_windsor_key,
+            set_analytics_config,
+            test_analytics,
             set_mistral_config,
             get_settings_status,
             get_accounts,
-            windsor_query,
-            windsor_action,
+            analytics_query,
+            analytics_action,
             adly_chat,
             trends_query,
             set_python_path,

@@ -3,7 +3,7 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { windsorQuery, num, fmt, dateNDaysAgo, QueryParams, Row, notifyNow } from "../lib/api";
+import { analyticsQuery, num, fmt, dateNDaysAgo, QueryParams, Row, notifyNow } from "../lib/api";
 import { exportPdf } from "../lib/pdf";
 import {
   DashboardLayout, defaultLayout, loadDashboardLayout, moveVisibleWidget,
@@ -837,7 +837,7 @@ export default function Dashboard({ accounts }: Props) {
 
     async function safeQuery(params: QueryParams): Promise<Row[]> {
       try {
-        return await windsorQuery(params);
+        return await analyticsQuery(params);
       } catch (exception) {
         errors.push(String(exception));
         return [];

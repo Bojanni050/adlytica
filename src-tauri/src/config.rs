@@ -6,8 +6,12 @@ use std::path::PathBuf;
 pub struct AppConfig {
     // Elk veld is `default`, zodat een bestaand config.json zonder nieuw veld
     // niet de hele configuratie (inclusief API-keys) op default zet.
+    /// Basis-URL van de self-hosted analytics-service (GA4, Search Console, Ads).
     #[serde(default)]
-    pub windsor_api_key: Option<String>,
+    pub analytics_base_url: Option<String>,
+    /// Bearer-token uit de Google-login van die service.
+    #[serde(default)]
+    pub analytics_token: Option<String>,
     #[serde(default)]
     pub mistral_api_key: Option<String>,
     #[serde(default = "default_mistral_model")]
@@ -53,7 +57,8 @@ fn default_python_path() -> String {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            windsor_api_key: None,
+            analytics_base_url: None,
+            analytics_token: None,
             mistral_api_key: None,
             mistral_model: default_mistral_model(),
             accounts: HashMap::new(),
@@ -123,14 +128,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_zonder_layout_blijft_geldig() {
-        // Bestaand config.json van vóór het dashboardlayout-veld mag niet op default vallen,
-        // anders raken API-keys en accounts kwijt.
+    fn config_van_voor_de_databronwissel_blijft_geldig() {
+        // Een bestaand config.json met het oude windsor_api_key-veld mag niet op default
+        // vallen, anders raken accounts en andere sleutels kwijt. Het onbekende veld
+        // wordt genegeerd.
         let text = r#"{"windsor_api_key":"w","mistral_api_key":"m","mistral_model":"mistral-small-latest","accounts":{"searchconsole":"acc"},"python_path":"python3"}"#;
         let cfg: AppConfig = serde_json::from_str(text).expect("bestaande config moet leesbaar blijven");
-        assert_eq!(cfg.windsor_api_key.as_deref(), Some("w"));
+        assert_eq!(cfg.mistral_api_key.as_deref(), Some("m"));
+        assert!(cfg.analytics_token.is_none());
         assert_eq!(cfg.accounts.get("searchconsole").map(String::as_str), Some("acc"));
         assert!(cfg.dashboard_layout.is_none());
+    }
+
+    #[test]
+    fn databron_instellingen_blijven_bewaard() {
+        let cfg = AppConfig {
+            analytics_base_url: Some("https://analytics.studiovanderheide.nl".into()),
+            analytics_token: Some("tok".into()),
+            ..AppConfig::default()
+        };
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(
+            back.analytics_base_url.as_deref(),
+            Some("https://analytics.studiovanderheide.nl")
+        );
+        assert_eq!(back.analytics_token.as_deref(), Some("tok"));
     }
 
     #[test]

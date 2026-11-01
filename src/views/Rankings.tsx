@@ -4,7 +4,7 @@ import {
 } from "recharts";
 import {
   dateNDaysAgo, fmt, getRankings, num, RankPoint, RankingStore, recordRankPoints,
-  Row, trackKeyword, untrackKeyword, windsorQuery,
+  Row, trackKeyword, untrackKeyword, analyticsQuery,
 } from "../lib/api";
 
 interface Props { accounts: Record<string, string>; }
@@ -77,7 +77,7 @@ export default function Rankings({ accounts }: Props) {
   /** Haalt de posities uit Search Console en bewaart ze voor de gevolgde zoektermen. */
   async function sync(tracked: string[]): Promise<RankingStore> {
     if (tracked.length === 0) return store;
-    const rows: Row[] = await windsorQuery({
+    const rows: Row[] = await analyticsQuery({
       connector: "searchconsole",
       account: accounts.searchconsole,
       fields: ["date", "query", "position"],
@@ -143,7 +143,7 @@ export default function Rankings({ accounts }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const rows = await windsorQuery({
+      const rows = await analyticsQuery({
         connector: "searchconsole",
         account: accounts.searchconsole,
         fields: ["query", "clicks", "impressions"],

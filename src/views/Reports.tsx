@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { windsorQuery, num, fmt, dateNDaysAgo, Row } from "../lib/api";
+import { analyticsQuery, num, fmt, dateNDaysAgo, Row } from "../lib/api";
 import { exportPdf, PdfKpi, PdfSection } from "../lib/pdf";
 
 const DAYS = [30, 90];
@@ -78,7 +78,7 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
       const needQueries = selected.some((id) => ["summary", "queries", "lhf", "ctr"].includes(id));
       const queries =
         needQueries || selected.includes("summary")
-          ? await windsorQuery({
+          ? await analyticsQuery({
               connector: "searchconsole",
               account: accounts.searchconsole,
               fields: ["query", "clicks", "impressions", "ctr", "position"],
@@ -105,7 +105,7 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
       }
 
       if (selected.includes("pages")) {
-        const rows = await windsorQuery({
+        const rows = await analyticsQuery({
           connector: "searchconsole",
           account: accounts.searchconsole,
           fields: ["page", "clicks", "impressions", "position"],
@@ -204,7 +204,7 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
       }
 
       if (selected.includes("ads") && accounts.google_ads) {
-        const rows = await windsorQuery({
+        const rows = await analyticsQuery({
           connector: "google_ads",
           account: accounts.google_ads,
           fields: ["campaign_name", "spend", "clicks", "conversions"],
@@ -229,7 +229,7 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
       }
 
       if (selected.includes("traffic") && accounts.googleanalytics4) {
-        const rows = await windsorQuery({
+        const rows = await analyticsQuery({
           connector: "googleanalytics4",
           account: accounts.googleanalytics4,
           fields: ["source", "sessions"],

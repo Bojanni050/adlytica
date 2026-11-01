@@ -1,6 +1,6 @@
 # Adlytica — SEO & Ads Command Center
 
-Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Google Ads en Google Trends verenigt in één werkplek. Data wordt opgehaald via de Windsor.ai API; Google Trends via een lokale Python-sidecar (pytrends).
+Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Google Ads en Google Trends verenigt in één werkplek. De data komt uit de eigen analytics-service (`analytics-mcp`: GA4 Data API, Search Console API en Google Ads API via `POST /query` en `POST /action`); Google Trends via een lokale Python-sidecar (pytrends).
 
 ## Functies
 
@@ -31,7 +31,7 @@ Desktop app (Tauri + React) die Google Analytics 4, Google Search Console, Googl
 - Node.js 18+ en npm
 - Rust toolchain (rustup) — nodig voor Tauri
 - Python 3.9+ met `pytrends`: `pip install pytrends`
-- Een Windsor.ai-account met verbonden Google Analytics 4, Search Console en Google Ads connectors, en een API-key (Windsor.ai → Settings → API)
+- Een draaiende **analytics-mcp**-service met een Google-login die de GA4-property, de Search Console-site en het Ads-account mag lezen; je hebt de service-URL en een token nodig
 - Voor Adly (AI): een Mistral API-key van console.mistral.ai
 - Voor de WordPress/Rank Math-koppeling: een WordPress-gebruiker met redactierechten en een **applicatiewachtwoord** (Gebruikers → Profiel → Applicatiewachtwoorden). Je gebruikersnaam is je inlognaam, niet je e-mailadres.
 
@@ -57,7 +57,7 @@ npm run tauri dev    # ontwikkelmodus
 npm run tauri build  # productiebuild (.deb/.msi/.app)
 ```
 
-1. Ga naar **Instellingen** en vul je Windsor.ai API-key in (accounts worden vooringesteld maar kunnen daar aangepast worden).
+1. Ga naar **Instellingen** en vul bij **Databron** de service-URL en het token in; de drie account-ID's staan al vooringesteld (`368911252`, `https://white-vision.nl/`, `307-043-6491`) en zijn daar aan te passen. Met **Verbinding testen** zie je of de service bereikbaar is.
 2. Zorg dat `python3` (of het pad naar je Python) beschikbaar is voor de Trends-sidecar.
 3. Voor de Rank Math-koppeling: vul bij **WordPress (Rank Math)** de site-URL, gebruikersnaam en het applicatiewachtwoord in en klik op **Verbinding testen**. Daarna schrijf je vanuit SEO Analyse per pagina de titel en meta-omschrijving weg naar WordPress.
 
@@ -65,10 +65,10 @@ npm run tauri build  # productiebuild (.deb/.msi/.app)
 
 ```
 src/                  React-frontend (views, components, lib)
-src-tauri/src/        Rust-backend: windsor.rs (API-client), wordpress.rs (Rank Math via WP-REST), rankings.rs (positiehistorie), trends.rs (sidecar), config.rs (config.json), lib.rs (Tauri-commando's)
+src-tauri/src/        Rust-backend: analytics.rs (client op de eigen analytics-service), wordpress.rs (Rank Math via WP-REST), rankings.rs (positiehistorie), trends.rs (sidecar), config.rs (config.json), lib.rs (Tauri-commando's)
 src-tauri/trends_sidecar.py  Python JSON-over-stdin sidecar voor pytrends
 ```
 
 ## Beveiliging
 
-De API-key blijft lokaal in de app; alle calls gaan direct naar `connectors.windsor.ai`. Er worden geen gegevens gedeeld met derden. Hetzelfde geldt voor de WordPress-gegevens: gebruikersnaam en applicatiewachtwoord worden lokaal in `config.json` bewaard en alleen gebruikt voor calls naar je eigen site.
+Het token blijft lokaal in de app; alle calls gaan naar je eigen analytics-service op `analytics.studiovanderheide.nl`. Er worden geen gegevens met derden gedeeld. Hetzelfde geldt voor de WordPress-gegevens: gebruikersnaam en applicatiewachtwoord worden lokaal in `config.json` bewaard en alleen gebruikt voor calls naar je eigen site.

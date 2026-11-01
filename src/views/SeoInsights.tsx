@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { windsorQuery, num, fmt, dateNDaysAgo, Row } from "../lib/api";
+import { analyticsQuery, num, fmt, dateNDaysAgo, Row } from "../lib/api";
 
 interface Props {
   accounts: Record<string, string>;
@@ -80,7 +80,7 @@ export default function SeoInsights({ accounts }: Props) {
       setError(null);
       const base = { connector: "searchconsole", account };
       const [currentRows, previousRows, pageRows, previousPageRows, sourceRows] = await Promise.allSettled([
-        windsorQuery({
+        analyticsQuery({
           ...base,
           fields: ["query", "clicks", "impressions", "position"],
           date_from: dateNDaysAgo(DAYS),
@@ -88,7 +88,7 @@ export default function SeoInsights({ accounts }: Props) {
           group_by: ["query"],
           limit: 5000,
         }),
-        windsorQuery({
+        analyticsQuery({
           ...base,
           fields: ["query", "clicks", "impressions", "position"],
           date_from: dateNDaysAgo(DAYS * 2),
@@ -96,7 +96,7 @@ export default function SeoInsights({ accounts }: Props) {
           group_by: ["query"],
           limit: 5000,
         }),
-        windsorQuery({
+        analyticsQuery({
           ...base,
           fields: ["page", "clicks", "impressions", "position"],
           date_from: dateNDaysAgo(DAYS),
@@ -104,7 +104,7 @@ export default function SeoInsights({ accounts }: Props) {
           group_by: ["page"],
           limit: 2000,
         }),
-        windsorQuery({
+        analyticsQuery({
           ...base,
           fields: ["page", "clicks", "impressions", "position"],
           date_from: dateNDaysAgo(DAYS * 2),
@@ -113,7 +113,7 @@ export default function SeoInsights({ accounts }: Props) {
           limit: 2000,
         }),
         accounts.googleanalytics4
-          ? windsorQuery({
+          ? analyticsQuery({
               connector: "googleanalytics4",
               account: accounts.googleanalytics4,
               fields: ["source", "sessions"],

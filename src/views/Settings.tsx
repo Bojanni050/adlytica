@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
-  setWindsorKey, setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
+  setAnalyticsConfig, testAnalytics, setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
   setWordpressConfig, testWordpress, setBrand, BrandConfig,
   getNotifications, setNotifications as saveNotifications, testNotification, setDataForSeo, setPagespeedKey,
 } from "../lib/api";
@@ -21,7 +21,9 @@ const DEFAULT_BRAND: BrandConfig = {
 };
 
 export default function Settings({ accounts, onAccounts, brand, onBrand }: Props) {
-  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [token, setToken] = useState("");
+  const [testMsg, setTestMsg] = useState<string | null>(null);
   const [gscAccount, setGscAccount] = useState(accounts.searchconsole ?? "");
   const [adsAccount, setAdsAccount] = useState(accounts.google_ads ?? "");
   const [ga4Account, setGa4Account] = useState(accounts.googleanalytics4 ?? "");
@@ -55,14 +57,15 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
       setPythonPath(st.python_path);
       if (st.wp_url) setWpUrl(st.wp_url);
       if (st.wp_user) setWpUser(st.wp_user);
+      if (st.analytics_base_url) setBaseUrl(st.analytics_base_url);
     }).catch(() => undefined);
     getNotifications().then(setNotifications).catch(() => undefined);
   }, []);
 
   async function save() {
     try {
-      if (apiKey.trim() !== "") {
-        await setWindsorKey(apiKey.trim(), {
+      if (token.trim() !== "" || baseUrl.trim() !== "") {
+        await setAnalyticsConfig(baseUrl.trim(), token.trim(), {
           searchconsole: gscAccount,
           google_ads: adsAccount,
           googleanalytics4: ga4Account,
@@ -116,6 +119,21 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
     reader.readAsDataURL(file);
   }
 
+  async function testDataSource() {
+    setTestMsg("Verbinden…");
+    try {
+      // Eerst opslaan, zodat de test de ingestelde URL en het token gebruikt.
+      await setAnalyticsConfig(baseUrl.trim(), token.trim(), {
+        searchconsole: gscAccount,
+        google_ads: adsAccount,
+        googleanalytics4: ga4Account,
+      });
+      setTestMsg(await testAnalytics());
+    } catch (e) {
+      setTestMsg(`✗ ${e}`);
+    }
+  }
+
   async function testWp() {
     setWpTest("Verbinden…");
     try {
@@ -131,7 +149,7 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
   return (
     <div style={{ maxWidth: 640 }}>
       <h1>Instellingen</h1>
-      <p className="subtitle">Windsor.ai en accountconfiguratie</p>
+      <p className="subtitle">Databron (analytics-mcp) en accountconfiguratie</p>
 
       {status && <div className="card" style={{ marginBottom: 16, borderColor: "var(--accent)" }}>{status}</div>}
       {saved?.config_path && (
@@ -141,20 +159,34 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
       )}
 
       <div className="card">
-        <h3>Windsor.ai API</h3>
+        <h3>Databron — analytics-mcp</h3>
         <div className="form-row">
           <div>
-            <label className="field">
-              API-key {saved?.windsor_key_set ? "— ✓ opgeslagen (laat leeg om te behouden)" : ""}
-            </label>
+            <label className="field">Service-URL</label>
             <input
-              type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
-              placeholder={saved?.windsor_key_set ? "•••••••• (opgeslagen)" : "Voer je API-key in"}
+              type="text" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://analytics.studiovanderheide.nl"
             />
           </div>
         </div>
+        <div className="form-row">
+          <div>
+            <label className="field">
+              Token {saved?.analytics_token_set ? "— ✓ opgeslagen (laat leeg om te behouden)" : ""}
+            </label>
+            <input
+              type="password" value={token} onChange={(e) => setToken(e.target.value)}
+              placeholder={saved?.analytics_token_set ? "•••••••• (opgeslagen)" : "Bearer-token uit de Google-login"}
+            />
+          </div>
+        </div>
+        <div className="form-row">
+          <button className="ghost" type="button" onClick={testDataSource}>Verbinding testen</button>
+          {testMsg && <span className="hint" style={{ alignSelf: "center" }}>{testMsg}</span>}
+        </div>
         <p className="hint">
-          Vind je API-key in Windsor.ai onder Settings → API. De sleutel wordt lokaal in de app bewaard.
+          Eigen analytics-service voor Google Analytics 4, Search Console en Google Ads, onder één
+          token. De drie accountvelden hieronder blijven ongewijzigd.
         </p>
 
         <div className="form-row">

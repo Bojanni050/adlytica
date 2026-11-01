@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { windsorAction, windsorQuery, num, fmt, dateNDaysAgo, Row } from "../lib/api";
+import { analyticsAction, analyticsQuery, num, fmt, dateNDaysAgo, Row } from "../lib/api";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -75,7 +75,7 @@ export default function SearchTerms({ accounts }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const data = await windsorQuery({
+        const data = await analyticsQuery({
           connector: "google_ads",
           account: accounts.google_ads,
           fields: [
@@ -171,7 +171,7 @@ export default function SearchTerms({ accounts }: Props) {
 
     for (const [campaignId, list] of perCampaign) {
       try {
-        await windsorAction("google_ads", accounts.google_ads, "push_negative_keywords", {
+        await analyticsAction("google_ads", accounts.google_ads, "push_negative_keywords", {
           level: "campaign",
           campaign_id: campaignId,
           keywords: list.map((term) => ({ text: term.term, match_type: matchType })),
