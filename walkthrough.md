@@ -190,3 +190,9 @@
 - Findings: `log_step` appende onbeperkt — bij jaarlijks gebruik onschuldig, maar een hard-loopende dev-build of een crash-loop rond de login zou het bestand maanden.getWindow laten groeien.
 - Conclusions: rotatie in plaats van truncatie: de vorige log blijft als `login.log.old` beschikbaar voor diagnose van de vorige run, en het totaal blijft ≤ ~2x de grens. Check via `std::fs::metadata` vóór het openen, want append-mode leest niet terug. Mislukt renamen/removen? Doorschrijven — logging mag een login nooit blokkeren.
 - Actions: `src-tauri/src/oauth.rs::log_step` — vóór elke append een metadata-check ≥ 256 KiB → `remove_file`+`rename` van login.log → login.log.old; comment bijgewerkt; validated.
+
+## 2026-11-01 (Dynamisch login.log-pad in de UI)
+
+- Findings: de inlogkaart toonde het logboek-pad opgebouwd met een string-replace op `saved.config_path` (`config.json` → `login.log`); dat klopt, maar de UI raadt dan het pad dat `oauth::log_step` zelf schrijft — twee bronnen voor hetzelfde pad kunnen uit elkaar lopen (bijv. als `config_path` ergens anders naartoe wijst).
+- Conclusions: de backend is de bron van waarheid; `SettingsStatus` levert het pad nu zoals `log_step` het daadwerkelijk gebruikt, met de oude replace als fallback voor oudere responses.
+- Actions: `src-tauri/src/oauth.rs` — nieuwe `log_path()` (config_dir + `login.log`), gebruikt door het bestaande `log_step`; `src-tauri/src/lib.rs` — `SettingsStatus.login_log_path` gevuld in `get_settings_status`; `src/lib/api.ts` — typeveld `login_log_path`; `src/views/Settings.tsx` — kaart toont `saved.login_log_path` met de replace als fallback. `cargo check --no-default-features` en `npx tsc --noEmit` groen; validated.

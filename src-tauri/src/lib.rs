@@ -104,6 +104,8 @@ pub struct SettingsStatus {
     pub accounts: HashMap<String, String>,
     pub python_path: String,
     pub config_path: Option<String>,
+    /** Pad van het login-logboek, voor de hint in instellingen. */
+    pub login_log_path: Option<String>,
     pub wp_url: Option<String>,
     pub wp_user: Option<String>,
     pub wp_password_set: bool,
@@ -310,6 +312,7 @@ async fn get_settings_status(state: State<'_, AppState>) -> Result<SettingsStatu
         accounts,
         python_path,
         config_path: config::config_path().map(|p| p.to_string_lossy().into_owned()),
+        login_log_path: oauth::log_path().map(|p| p.to_string_lossy().into_owned()),
         wp_url,
         wp_user,
         wp_password_set,

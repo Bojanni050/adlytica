@@ -71,6 +71,13 @@ fn http_client() -> reqwest::Client {
 /// Logt een stap naar stderr én naar `<configmap>/login.log`, zodat een mislukte
 /// login op een andere machine te achterhalen is. Groeit nooit onbeperkt: boven
 /// 256 KB wordt de log gerouleerd naar `login.log.old` en opnieuw begonnen.
+/// Pad van het login-logboek (`<configmap>/login.log`), of `None` als er
+/// geen configmap te bepalen is. Eén bron: `log_step` en de UI-hint in
+/// instellingen delen ditzelfde pad.
+pub(crate) fn log_path() -> Option<std::path::PathBuf> {
+    crate::config::config_dir().map(|dir| dir.join("login.log"))
+}
+
 pub(crate) fn log_step(message: &str) {
     eprintln!("[login] {message}");
     let Some(dir) = crate::config::config_dir() else {

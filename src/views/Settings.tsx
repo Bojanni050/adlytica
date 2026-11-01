@@ -207,7 +207,7 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
           )}
           {saved?.config_path && (
             <div className="hint" style={{ marginTop: 8 }}>
-              Logboek met elke stap: {saved.config_path.replace(/config\.json$/, "login.log")}
+              Logboek met elke stap: {saved.login_log_path ?? saved.config_path.replace(/config\.json$/, "login.log")}
             </div>
           )}
         </div>

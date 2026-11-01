@@ -122,6 +122,8 @@ export interface SettingsStatus {
   accounts: Record<string, string>;
   python_path: string;
   config_path: string | null;
+  /** Pad van het login-logboek, zoals de backend het daadwerkelijk gebruikt. */
+  login_log_path: string | null;
   wp_url: string | null;
   wp_user: string | null;
   wp_password_set: boolean;
