@@ -128,7 +128,12 @@ export default function App() {
           <span>Snel naar…</span>
           <span className="kbd">Ctrl K</span>
         </button>
-        <div className="sidebar-footer">{brand?.footer || "v0.1.0 — White Vision"}</div>
+        <div className="sidebar-footer" title={`build ${__BUILD__.sha} · ${__BUILD__.date}`}>
+          {brand?.footer || "v0.1.0 — White Vision"}
+          <div style={{ opacity: 0.55, fontSize: "0.75em", marginTop: 2 }}>
+            build {__BUILD__.sha}
+          </div>
+        </div>
       </aside>
       <main className="content">{views[view]}</main>
       <AdlyPanel accounts={accounts} />
