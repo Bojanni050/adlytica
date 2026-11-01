@@ -184,3 +184,9 @@
 - Findings: net na de PDF-export verscheen alleen het pad als tekst; de gebruiker moest zelf naar Downloads navigeren.
 - Conclusions: dit is generiek probleem voor elke PDF-export (save_pdf bestaat al voor meerdere views), dus de oplossing zit op twee niveaus: herbruikbare Tauri-commands en alleen in Audit (waar Bo om vroeg) de knoppen. Voor het openen geldt dezelfde les als bij open_browser: rondll32/url.dll met ShellExecute, geen cmd. Voor explorer /select moet het argument met raw_arg letterlijk worden doorgegeven, omdat de Verkenner zijn eigen opdrachtregel-parse heeft.
 - Actions: `src-tauri/src/lib.rs` — commands `open_path` (rundll32 FileProtocolHandler) en `reveal_path` (explorer /select met raw_arg), geregistreerd in generate_handler. `src/lib/api.ts` — `openPath` en `revealPath`. `src/views/Audit.tsx` — na het opslaan een regel met laatst opgeslagen pad plus knoppen "PDF openen" en "Map openen" (fouten voeren naar setError). `npx tsc --noEmit` en `cargo check --no-default-features` groen; validated.
+
+## 2026-11-01 (login.log gebonden: rotatie naar .old op 256 KB)
+
+- Findings: `log_step` appende onbeperkt — bij jaarlijks gebruik onschuldig, maar een hard-loopende dev-build of een crash-loop rond de login zou het bestand maanden.getWindow laten groeien.
+- Conclusions: rotatie in plaats van truncatie: de vorige log blijft als `login.log.old` beschikbaar voor diagnose van de vorige run, en het totaal blijft ≤ ~2x de grens. Check via `std::fs::metadata` vóór het openen, want append-mode leest niet terug. Mislukt renamen/removen? Doorschrijven — logging mag een login nooit blokkeren.
+- Actions: `src-tauri/src/oauth.rs::log_step` — vóór elke append een metadata-check ≥ 256 KiB → `remove_file`+`rename` van login.log → login.log.old; comment bijgewerkt; validated.

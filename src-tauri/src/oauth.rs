@@ -69,17 +69,27 @@ fn http_client() -> reqwest::Client {
 }
 
 /// Logt een stap naar stderr én naar `<configmap>/login.log`, zodat een mislukte
-/// login op een andere machine te achterhalen is.
+/// login op een andere machine te achterhalen is. Groeit nooit onbeperkt: boven
+/// 256 KB wordt de log gerouleerd naar `login.log.old` en opnieuw begonnen.
 pub(crate) fn log_step(message: &str) {
     eprintln!("[login] {message}");
     let Some(dir) = crate::config::config_dir() else {
         return;
     };
     let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("login.log");
+    // Rotatie: append-first kan niet teruglezen, dus via metadata checken
+    // vóór het openen. Mislukt het renamen, dan gewoon doorschrijven —
+    // logging mag een login nooit tegenhouden.
+    if std::fs::metadata(&path).map(|m| m.len() >= 256 * 1024).unwrap_or(false) {
+        let old = dir.join("login.log.old");
+        let _ = std::fs::remove_file(&old);
+        let _ = std::fs::rename(&path, &old);
+    }
     if let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(dir.join("login.log"))
+        .open(path)
     {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
