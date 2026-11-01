@@ -57,9 +57,10 @@ npm run tauri dev    # ontwikkelmodus
 npm run tauri build  # productiebuild (.deb/.msi/.app)
 ```
 
-1. Ga naar **Instellingen** en vul bij **Databron** de service-URL en het token in; de drie account-ID's staan al vooringesteld (`368911252`, `https://white-vision.nl/`, `307-043-6491`) en zijn daar aan te passen. Met **Verbinding testen** zie je of de service bereikbaar is.
+1. Ga naar **Instellingen → Databron**. De service-URL staat standaard op `https://analytics.studiovanderheide.nl`; klik op **Inloggen met Google** — de app opent je browser, vangt de login lokaal op en bewaart access- én refresh-token. Met **Verbinding testen** zie je of de service bereikbaar is. De drie account-ID's staan al vooringesteld (`368911252`, `https://white-vision.nl/`, `307-043-6491`) en zijn daar aan te passen. Handmatig een token plakken kan ook, maar dan vernieuwt de app het niet zelf.
 2. Zorg dat `python3` (of het pad naar je Python) beschikbaar is voor de Trends-sidecar.
-3. Voor de Rank Math-koppeling: vul bij **WordPress (Rank Math)** de site-URL, gebruikersnaam en het applicatiewachtwoord in en klik op **Verbinding testen**. Daarna schrijf je vanuit SEO Analyse per pagina de titel en meta-omschrijving weg naar WordPress.
+3. Wil je je merklogo in de app (Wit-label, `WHITE_LABEL_ENABLED`): **Instellingen → Wit-label → Logo** en kies `assets/brand-logo-adlytica.png`.
+4. Voor de Rank Math-koppeling: vul bij **WordPress (Rank Math)** de site-URL, gebruikersnaam en het applicatiewachtwoord in en klik op **Verbinding testen**. Daarna schrijf je vanuit SEO Analyse per pagina de titel en meta-omschrijving weg naar WordPress.
 
 ## Structuur
 
