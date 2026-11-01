@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
-  windsorQuery, windsorAction, num, fmt, dateNDaysAgo, Row,
+  analyticsQuery, analyticsAction, num, fmt, dateNDaysAgo, Row,
 } from "../lib/api";
 
 interface Props { accounts: Record<string, string>; }
@@ -26,7 +26,7 @@ export default function Campaigns({ accounts }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const rows = await windsorQuery({
+      const rows = await analyticsQuery({
         connector: "google_ads", account: accounts.google_ads,
         fields: [
           "campaign_id", "campaign_name", "status",
@@ -57,7 +57,7 @@ export default function Campaigns({ accounts }: Props) {
 
   async function toggleCampaign(c: CampaignRow, action: "pause_campaign" | "enable_campaign") {
     try {
-      await windsorAction("google_ads", accounts.google_ads, action, { campaign_id: c.id });
+      await analyticsAction("google_ads", accounts.google_ads, action, { campaign_id: c.id });
       setNotice(`Campaign "${c.name}" ${action === "pause_campaign" ? "gepauzeerd" : "geactiveerd"}.`);
       loadCampaigns();
     } catch (e) {
@@ -150,7 +150,7 @@ function CreateCampaignForm({ accounts, onCreated }: { accounts: Record<string, 
   async function createCampaign() {
     setBusy(true); setError(null);
     try {
-      const result = (await windsorAction("google_ads", accounts.google_ads, "create_campaign", {
+      const result = (await analyticsAction("google_ads", accounts.google_ads, "create_campaign", {
         name, channel_type: channel, bidding_strategy: bidding,
         budget_amount_micros: Math.round(parseFloat(budget) * 1_000_000),
         status,
@@ -166,7 +166,7 @@ function CreateCampaignForm({ accounts, onCreated }: { accounts: Record<string, 
     if (!campaignId) return;
     setBusy(true); setError(null);
     try {
-      await windsorAction("google_ads", accounts.google_ads, "create_ad_group", {
+      await analyticsAction("google_ads", accounts.google_ads, "create_ad_group", {
         campaign_id: campaignId, name: agName,
         cpc_bid_micros: Math.round(parseFloat(agCpc) * 1_000_000),
         status: "paused",

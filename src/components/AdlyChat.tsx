@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  adlyChat, windsorAction, windsorQuery, num, dateNDaysAgo, ChatMessage,
+  adlyChat, analyticsAction, analyticsQuery, num, dateNDaysAgo, ChatMessage,
 } from "../lib/api";
 
 interface Props {
@@ -79,12 +79,12 @@ export default function AdlyChat({ accounts, compact = false }: Props) {
     if (!withContext) return undefined;
     try {
       const [gsc, ads] = await Promise.all([
-        windsorQuery({
+        analyticsQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["query", "clicks", "impressions", "ctr", "position"],
           date_from: dateNDaysAgo(89), group_by: ["query"], limit: 3000,
         }),
-        windsorQuery({
+        analyticsQuery({
           connector: "google_ads", account: accounts.google_ads,
           fields: ["campaign_id", "campaign_name", "status", "spend", "clicks", "impressions", "conversions"],
           date_from: dateNDaysAgo(29), group_by: ["campaign_id"], limit: 200,
@@ -143,7 +143,7 @@ export default function AdlyChat({ accounts, compact = false }: Props) {
         }
       }
 
-      await windsorAction("google_ads", accounts.google_ads, act.action, params);
+      await analyticsAction("google_ads", accounts.google_ads, act.action, params);
       setMessages((prev) => {
         const next = [
           ...prev,

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  runAudit, windsorQuery, dateNDaysAgo, AuditPage, AuditResult, Row,
+  runAudit, analyticsQuery, dateNDaysAgo, AuditPage, AuditResult, Row,
 } from "../lib/api";
 import { exportPdf } from "../lib/pdf";
 
@@ -102,7 +102,7 @@ export default function Audit({ accounts }: { accounts: Record<string, string> }
   async function loadStats(base: string): Promise<Record<string, PageStats>> {
     if (!accounts.searchconsole) return {};
     try {
-      const rows: Row[] = await windsorQuery({
+      const rows: Row[] = await analyticsQuery({
         connector: "searchconsole",
         account: accounts.searchconsole,
         fields: ["page", "clicks", "impressions"],

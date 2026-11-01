@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { windsorQuery, num, fmt, dateNDaysAgo, Row, getWpSeo, setWpSeo as writeWpSeo, WpSeo } from "../lib/api";
+import { analyticsQuery, num, fmt, dateNDaysAgo, Row, getWpSeo, setWpSeo as writeWpSeo, WpSeo } from "../lib/api";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -29,12 +29,12 @@ export default function SeoAnalysis({ accounts }: Props) {
       setError(null);
       try {
         const [p, q] = await Promise.all([
-          windsorQuery({
+          analyticsQuery({
             connector: "searchconsole", account: accounts.searchconsole,
             fields: ["page", "clicks", "impressions", "ctr", "position"],
             date_from: dateNDaysAgo(89), group_by: ["page"], limit: 1000,
           }),
-          windsorQuery({
+          analyticsQuery({
             connector: "searchconsole", account: accounts.searchconsole,
             fields: ["query", "page", "clicks", "impressions", "ctr", "position"],
             date_from: dateNDaysAgo(89), group_by: ["query", "page"], limit: 5000,
