@@ -1,17 +1,22 @@
-import React, { useEffect, useId, useState } from "react";
+import React, { useEffect, useId, useMemo, useState } from "react";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { analyticsQuery, num, fmt, dateNDaysAgo, QueryParams, Row, notifyNow } from "../lib/api";
 import { exportPdf } from "../lib/pdf";
-import { useDateRange } from "../lib/dateRange";
+import { shiftDate, useDateRange } from "../lib/dateRange";
+import { buildDashboardAlerts } from "../lib/alerts";
 import {
   DashboardLayout, defaultLayout, loadDashboardLayout, moveVisibleWidget,
   resetDashboardLayout, reorderWidgets, saveDashboardLayout,
 } from "../lib/dashboardLayout";
 
-interface Props { accounts: Record<string, string>; }
+interface Props {
+  accounts: Record<string, string>;
+  /** Ga naar een andere view; gebruikt door de alert-knoppen. */
+  onNavigate?: (view: string) => void;
+}
 
 interface DashboardData {
   gsc: Row[];
@@ -25,6 +30,10 @@ interface DashboardData {
   queryDaily: Row[];
   /** Impressies en posities per zoekterm per pagina, voor de cannibalisatie-widget. */
   queryPage: Row[];
+  /** Search Console-dagcijfers van de even lange periode daarvoor, voor de alerts. */
+  gscPrevious: Row[];
+  /** Zoektermen van de even lange periode daarvoor, voor de alerts. */
+  queriesPrevious: Row[];
 }
 
 type WidgetSpan = 2 | 3 | 4 | 6 | 12;
@@ -793,8 +802,8 @@ function WidgetFrame({
   );
 }
 
-export default function Dashboard({ accounts }: Props) {
-  const [data, setData] = useState<DashboardData>({ gsc: [], ads: [], ga4: [], queries: [], pages: [], pageDaily: [], queryDaily: [], queryPage: [] });
+export default function Dashboard({ accounts, onNavigate }: Props) {
+  const [data, setData] = useState<DashboardData>({ gsc: [], ads: [], ga4: [], queries: [], pages: [], pageDaily: [], queryDaily: [], queryPage: [], gscPrevious: [], queriesPrevious: [] });
   const [loading, setLoading] = useState(true);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -848,7 +857,9 @@ export default function Dashboard({ accounts }: Props) {
       setError(null);
       const from = rangeFrom;
       const anomalyFrom = dateNDaysAgo(ANOMALY_LOOKBACK - 1);
-      const [gsc, ads, ga4, queries, pages, pageDaily, queryDaily, queryPage] = await Promise.all([
+      const previousFrom = shiftDate(rangeFrom, -rangeDays);
+      const previousTo = shiftDate(rangeTo, -rangeDays);
+      const [gsc, ads, ga4, queries, pages, pageDaily, queryDaily, queryPage, gscPrevious, queriesPrevious] = await Promise.all([
         safeQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["date", "clicks", "impressions", "ctr", "position"],
@@ -889,9 +900,19 @@ export default function Dashboard({ accounts }: Props) {
           fields: ["query", "page", "clicks", "impressions", "position"],
            date_from: rangeFrom, date_to: rangeTo, group_by: ["query", "page"], limit: 5000,
         }),
+        safeQuery({
+          connector: "searchconsole", account: accounts.searchconsole,
+          fields: ["date", "clicks", "impressions", "ctr", "position"],
+           date_from: previousFrom, date_to: previousTo, group_by: ["date"], limit: 5000,
+        }),
+        safeQuery({
+          connector: "searchconsole", account: accounts.searchconsole,
+          fields: ["query", "clicks", "impressions", "ctr", "position"],
+           date_from: previousFrom, date_to: previousTo, group_by: ["query"], limit: 500,
+        }),
       ]);
       if (cancelled) return;
-      setData({ gsc, ads, ga4, queries, pages, pageDaily, queryDaily, queryPage });
+      setData({ gsc, ads, ga4, queries, pages, pageDaily, queryDaily, queryPage, gscPrevious, queriesPrevious });
       setError(errors.length > 0 ? errors[0] : null);
       setUpdatedAt(new Date());
       setLoading(false);
@@ -922,7 +943,20 @@ export default function Dashboard({ accounts }: Props) {
 
     load();
     return () => { cancelled = true; };
-  }, [accounts, reloadKey, rangeFrom, rangeTo, layoutLoaded]);
+  }, [accounts, reloadKey, rangeFrom, rangeTo, rangeDays, layoutLoaded]);
+
+  const alerts = useMemo(
+    () =>
+      buildDashboardAlerts({
+        gsc: data.gsc,
+        gscPrevious: data.gscPrevious,
+        queries: data.queries,
+        queriesPrevious: data.queriesPrevious,
+        pages: data.pages,
+        days: rangeDays,
+      }),
+    [data, rangeDays]
+  );
 
   const visibleWidgets = layout.order
     .filter((id) => !layout.hidden.includes(id))
@@ -1148,6 +1182,36 @@ export default function Dashboard({ accounts }: Props) {
       )}
 
       {error && <div className="error-box">{error}</div>}
+
+      {alerts.length > 0 && (
+        <section className="alert-panel" aria-label="Wat opvalt">
+          <div className="alert-head">
+            <strong>Wat opvalt</strong>
+            <span className="hint">Automatisch uit de cijfers van deze periode</span>
+          </div>
+          <ul className="alert-list">
+            {alerts.map((alert) => (
+              <li key={alert.id} className={`alert-item ${alert.severity}`}>
+                <span className="alert-sev">{alert.severity}</span>
+                <div className="alert-body">
+                  <div className="alert-title">{alert.title}</div>
+                  <p className="hint">{alert.detail}</p>
+                  <p className="alert-action">{alert.impact} {alert.action}</p>
+                </div>
+                {alert.view && onNavigate && (
+                  <button
+                    type="button"
+                    className="ghost alert-open"
+                    onClick={() => alert.view && onNavigate(alert.view)}
+                  >
+                    {alert.viewLabel ?? "Openen"}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {visibleWidgets.length === 0 ? (
         <div className="dash-empty">

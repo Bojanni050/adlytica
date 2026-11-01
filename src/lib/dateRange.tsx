@@ -22,6 +22,13 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Verschuift een YYYY-MM-DD met een aantal dagen (UTC, dus geen DST-verrassingen). */
+export function shiftDate(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 function readStored(): { preset: number | "custom"; from: string; to: string } {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");

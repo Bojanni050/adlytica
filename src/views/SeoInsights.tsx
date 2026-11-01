@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { analyticsQuery, num, fmt, Row } from "../lib/api";
-import { useDateRange } from "../lib/dateRange";
+import { useDateRange, shiftDate } from "../lib/dateRange";
 
 interface Props {
   accounts: Record<string, string>;
@@ -24,12 +24,6 @@ interface Channel {
 
 function key(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
-}
-
-function shiftDate(date: string, days: number): string {
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
 }
 
 function ctrOf(point: { clicks: number; impressions: number }): number {

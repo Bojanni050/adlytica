@@ -206,8 +206,47 @@ button.danger { background: var(--danger); color: #1b1206; border: none; border-
   font-size: 13px;
 }
 
-.form-row { display: flex; gap: 12px; margin-bottom: 12px; }
-.form-row > div { flex: 1; }
+/* Dashboard-alerts: drie vaste regels, bewust geen generiek alarmeringssysteem. */
+.alert-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.alert-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.alert-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.alert-item.hoog { border-left-color: var(--danger); }
+.alert-item.middel { border-left-color: var(--warn); }
+.alert-item.laag { border-left-color: var(--accent-2); }
+.alert-sev {
+  flex: none;
+  min-width: 48px;
+  padding-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.alert-item.hoog .alert-sev { color: var(--danger); }
+.alert-item.middel .alert-sev { color: var(--warn); }
+.alert-body { flex: 1; min-width: 0; }
+.alert-title { font-weight: 600; margin-bottom: 2px; }
+.alert-body p { margin: 2px 0; }
+.alert-action { color: var(--text); font-size: 12px; }
+.alert-open { flex: none; align-self: center; }
+
+.form-row { display: flex; gap: 12px; margin-bottom: 12px; }.form-row > div { flex: 1; }
 label.field { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
 
 .tag-input { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; }

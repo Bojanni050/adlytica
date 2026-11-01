@@ -76,7 +76,7 @@ export default function App() {
   }, []);
 
   const views: Record<ViewId, React.ReactNode> = {
-    dashboard: <Dashboard accounts={accounts} />,
+    dashboard: <Dashboard accounts={accounts} onNavigate={(id) => setView(id as ViewId)} />,
     keywords: <KeywordSearch accounts={accounts} />,
     rankings: <Rankings accounts={accounts} />,
     seo: <SeoAnalysis accounts={accounts} />,
