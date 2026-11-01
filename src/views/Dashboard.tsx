@@ -3,7 +3,7 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { analyticsQuery, num, fmt, dateNDaysAgo, QueryParams, Row, notifyNow } from "../lib/api";
+import { analyticsQuery, num, fmt, dateNDaysAgo, QueryParams, Row, notifyNow, AlertSettings, DEFAULT_ALERT_SETTINGS } from "../lib/api";
 import { exportPdf } from "../lib/pdf";
 import { shiftDate, useDateRange } from "../lib/dateRange";
 import { buildDashboardAlerts } from "../lib/alerts";
@@ -16,6 +16,10 @@ interface Props {
   accounts: Record<string, string>;
   /** Ga naar een andere view; gebruikt door de alert-knoppen. */
   onNavigate?: (view: string) => void;
+  /** Drempels en schakelaars uit Instellingen. */
+  alertSettings?: AlertSettings;
+  /** Meldt het aantal alerts aan de zijbalk (badge). */
+  onAlerts?: (count: number) => void;
 }
 
 interface DashboardData {
@@ -802,7 +806,7 @@ function WidgetFrame({
   );
 }
 
-export default function Dashboard({ accounts, onNavigate }: Props) {
+export default function Dashboard({ accounts, onNavigate, alertSettings, onAlerts }: Props) {
   const [data, setData] = useState<DashboardData>({ gsc: [], ads: [], ga4: [], queries: [], pages: [], pageDaily: [], queryDaily: [], queryPage: [], gscPrevious: [], queriesPrevious: [] });
   const [loading, setLoading] = useState(true);
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -945,18 +949,45 @@ export default function Dashboard({ accounts, onNavigate }: Props) {
     return () => { cancelled = true; };
   }, [accounts, reloadKey, rangeFrom, rangeTo, rangeDays, layoutLoaded]);
 
+  const alertCfg = alertSettings ?? DEFAULT_ALERT_SETTINGS;
   const alerts = useMemo(
     () =>
-      buildDashboardAlerts({
-        gsc: data.gsc,
-        gscPrevious: data.gscPrevious,
-        queries: data.queries,
-        queriesPrevious: data.queriesPrevious,
-        pages: data.pages,
-        days: rangeDays,
-      }),
-    [data, rangeDays]
+      alertCfg.enabled
+        ? buildDashboardAlerts({
+            gsc: data.gsc,
+            gscPrevious: data.gscPrevious,
+            queries: data.queries,
+            queriesPrevious: data.queriesPrevious,
+            pages: data.pages,
+            days: rangeDays,
+            thresholds: alertCfg,
+          })
+        : [],
+    [data, rangeDays, alertCfg]
   );
+
+  // Badge in de zijbalk: het aantal alerts, ook als het blok verborgen is.
+  useEffect(() => {
+    onAlerts?.(alerts.length);
+  }, [alerts, onAlerts]);
+
+  // Eén systeemmelding per dag, alleen als de gebruiker dat in Instellingen
+  // aanzet. Losse localStorage-sleutel van de anomalie-melding hierboven.
+  useEffect(() => {
+    if (!loadedOnce || !alertCfg.notify || alerts.length === 0) return;
+    try {
+      const dayKey = `adlytica.alerts-notified.${new Date().toISOString().slice(0, 10)}`;
+      if (localStorage.getItem(dayKey) === String(alerts.length)) return;
+      localStorage.setItem(dayKey, String(alerts.length));
+      const worst = alerts[0];
+      void notifyNow(
+        `Adlytica — ${alerts.length} signaal${alerts.length === 1 ? "" : "en"} op je dashboard`,
+        worst.title
+      ).catch(() => undefined);
+    } catch {
+      // Een mislukte melding mag het dashboard nooit blokkeren.
+    }
+  }, [alerts, loadedOnce, alertCfg.notify]);
 
   const visibleWidgets = layout.order
     .filter((id) => !layout.hidden.includes(id))

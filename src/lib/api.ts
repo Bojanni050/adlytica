@@ -129,6 +129,46 @@ export interface SettingsStatus {
   wp_password_set: boolean;
   pagespeed_key_set: boolean;
   dataforseo_set: boolean;
+  /** Drempels en schakelaars voor de dashboard-alerts. */
+  alerts: AlertSettings;
+}
+
+/**
+ * Spiegel van `AlertSettings` in `src-tauri/src/config.rs`. De backend schoont
+ * de waarden op (percentages 0–100, ernst nooit strenger dan waarschuwing) en
+ * geeft die opgeschoonde versie terug.
+ */
+export interface AlertSettings {
+  enabled: boolean;
+  badge: boolean;
+  notify: boolean;
+  clicks_drop_warn_pct: number;
+  clicks_drop_high_pct: number;
+  min_clicks_previous: number;
+  min_page_impressions: number;
+  max_page_ctr_pct: number;
+  min_query_impressions: number;
+  position_drop_warn: number;
+  position_drop_high: number;
+}
+
+/** Zelfde waarden als `impl Default for AlertSettings` in Rust. */
+export const DEFAULT_ALERT_SETTINGS: AlertSettings = {
+  enabled: true,
+  badge: true,
+  notify: false,
+  clicks_drop_warn_pct: 15,
+  clicks_drop_high_pct: 30,
+  min_clicks_previous: 100,
+  min_page_impressions: 1000,
+  max_page_ctr_pct: 1,
+  min_query_impressions: 100,
+  position_drop_warn: 2,
+  position_drop_high: 5,
+};
+
+export async function setAlertSettings(settings: AlertSettings): Promise<AlertSettings> {
+  return invoke<AlertSettings>("set_alert_settings", { settings });
 }
 
 export async function getSettingsStatus(): Promise<SettingsStatus> {

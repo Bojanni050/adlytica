@@ -64,6 +64,20 @@ body {
 
 .nav-item:hover { background: var(--panel-2); color: var(--text); }
 
+/* Alert-badge in de zijbalk: klein pilletje achter het menu-item. */
+.nav-badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
 /* Actief menu-item zoals in het ontwerp: amber tekst, lichte amber gloed en een balkje links. */
 .nav-item.active {
   position: relative;

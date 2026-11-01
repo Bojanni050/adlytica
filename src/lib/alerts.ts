@@ -1,4 +1,4 @@
-import { Row, fmt, num } from "./api";
+import { AlertSettings, Row, fmt, num } from "./api";
 
 export type AlertSeverity = "hoog" | "middel" | "laag";
 
@@ -29,24 +29,9 @@ export interface AlertInput {
   /** Pagina's van de gekozen periode. */
   pages: Row[];
   days: number;
+  /** Drempels uit Instellingen; de defaults staan in `DEFAULT_ALERT_SETTINGS`. */
+  thresholds: AlertSettings;
 }
-
-/**
- * Drempels bewust expliciet en laag gehouden: liever drie uitlegbare alerts dan
- * een lange lijst ruis. Ze zijn hier aangepast zonder de UI aan te raken.
- */
-export const ALERT_THRESHOLDS = {
-  /** Onder dit aantal klikken in de vorige periode is een daling te ruisgevoelig. */
-  minClicksPrevious: 100,
-  clicksDropWarn: 0.15,
-  clicksDropHigh: 0.3,
-  /** Pagina's met minder vertoningen zeggen weinig over CTR. */
-  minPageImpressions: 1000,
-  maxPageCtr: 1,
-  minQueryImpressions: 100,
-  positionDropWarn: 2,
-  positionDropHigh: 5,
-} as const;
 
 const SEVERITY_ORDER: Record<AlertSeverity, number> = { hoog: 0, middel: 1, laag: 2 };
 
@@ -69,13 +54,16 @@ function shortPath(value: unknown): string {
 function clicksAlert(input: AlertInput): DashboardAlert | null {
   const current = sum(input.gsc, "clicks");
   const previous = sum(input.gscPrevious, "clicks");
-  if (previous < ALERT_THRESHOLDS.minClicksPrevious) return null;
+  const thresholds = input.thresholds;
+  if (previous < thresholds.min_clicks_previous) return null;
 
   const drop = (previous - current) / previous;
-  if (drop < ALERT_THRESHOLDS.clicksDropWarn) return null;
+  const warn = thresholds.clicks_drop_warn_pct / 100;
+  const high = thresholds.clicks_drop_high_pct / 100;
+  if (drop < warn) return null;
 
   const percent = Math.round(drop * 100);
-  const severity: AlertSeverity = drop >= ALERT_THRESHOLDS.clicksDropHigh ? "hoog" : "middel";
+  const severity: AlertSeverity = drop >= high ? "hoog" : "middel";
   return {
     id: "clicks-drop",
     severity,
@@ -101,7 +89,7 @@ function ctrAlert(input: AlertInput): DashboardAlert | null {
         ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
       };
     })
-    .filter((row) => row.page !== "" && row.impressions >= ALERT_THRESHOLDS.minPageImpressions && row.ctr < ALERT_THRESHOLDS.maxPageCtr)
+    .filter((row) => row.page !== "" && row.impressions >= input.thresholds.min_page_impressions && row.ctr < input.thresholds.max_page_ctr_pct)
     .sort((a, b) => b.impressions - a.impressions);
 
   if (rows.length === 0) return null;
@@ -148,16 +136,17 @@ function positionAlert(input: AlertInput): DashboardAlert | null {
 
   const current = aggregate(input.queries);
   const previous = aggregate(input.queriesPrevious);
+  const thresholds = input.thresholds;
   const dropped: { query: string; from: number; to: number; delta: number; impressions: number }[] = [];
 
   for (const [query, point] of current) {
     const before = previous.get(query);
     if (!before) continue;
-    if (before.impressions < ALERT_THRESHOLDS.minQueryImpressions) continue;
-    if (point.impressions < ALERT_THRESHOLDS.minQueryImpressions) continue;
+    if (before.impressions < thresholds.min_query_impressions) continue;
+    if (point.impressions < thresholds.min_query_impressions) continue;
     if (before.position <= 0 || point.position <= 0) continue;
     const delta = point.position - before.position;
-    if (delta < ALERT_THRESHOLDS.positionDropWarn) continue;
+    if (delta < thresholds.position_drop_warn) continue;
     dropped.push({ query, from: before.position, to: point.position, delta, impressions: point.impressions });
   }
 
@@ -165,7 +154,7 @@ function positionAlert(input: AlertInput): DashboardAlert | null {
 
   dropped.sort((a, b) => b.delta - a.delta || b.impressions - a.impressions);
   const worst = dropped[0];
-  const severity: AlertSeverity = worst.delta >= ALERT_THRESHOLDS.positionDropHigh ? "hoog" : "middel";
+  const severity: AlertSeverity = worst.delta >= thresholds.position_drop_high ? "hoog" : "middel";
   return {
     id: "position-drop",
     severity,

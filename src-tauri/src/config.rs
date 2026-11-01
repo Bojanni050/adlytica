@@ -50,6 +50,128 @@ pub struct AppConfig {
     /// Wit-label: app-naam, accentkleur, voettekst en logo (data-URL).
     #[serde(default)]
     pub brand: Option<serde_json::Value>,
+    /// Drempels en schakelaars voor de dashboard-alerts.
+    #[serde(default)]
+    pub alerts: AlertSettings,
+}
+
+/// Instelbare drempels voor de drie dashboard-alerts.
+///
+/// Bewust platte velden: de frontend spiegelt dit type één op één, dus een
+/// geneste struct zou alleen maar extra heen-en-weer werk kosten.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct AlertSettings {
+    /// Hoofdschakelaar: geen alerts, geen badge, geen meldingen.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Aantal alerts als badge in de zijbalk bij Dashboard.
+    #[serde(default = "default_true")]
+    pub badge: bool,
+    /// Windows-melding sturen als er alerts zijn (maximaal één per dag).
+    #[serde(default)]
+    pub notify: bool,
+    /// Klikdaling vanaf dit percentage is een alert.
+    #[serde(default = "default_clicks_warn")]
+    pub clicks_drop_warn_pct: f64,
+    /// Klikdaling vanaf dit percentage is een ernstige alert.
+    #[serde(default = "default_clicks_high")]
+    pub clicks_drop_high_pct: f64,
+    /// Onder dit aantal klikken in de vorige periode geen klik-alert (te ruisgevoelig).
+    #[serde(default = "default_min_clicks")]
+    pub min_clicks_previous: f64,
+    /// Pagina's onder dit aantal vertoningen doen niet mee aan de CTR-alert.
+    #[serde(default = "default_min_page_impressions")]
+    pub min_page_impressions: f64,
+    /// Pagina's met een CTR onder dit percentage (en genoeg vertoningen) krijgen een alert.
+    #[serde(default = "default_max_page_ctr")]
+    pub max_page_ctr_pct: f64,
+    /// Zoektermen onder dit aantal vertoningen doen niet mee aan de positie-alert.
+    #[serde(default = "default_min_query_impressions")]
+    pub min_query_impressions: f64,
+    /// Positiedaling vanaf dit aantal plaatsen is een alert.
+    #[serde(default = "default_position_warn")]
+    pub position_drop_warn: f64,
+    /// Positiedaling vanaf dit aantal plaatsen is een ernstige alert.
+    #[serde(default = "default_position_high")]
+    pub position_drop_high: f64,
+}
+
+fn default_true() -> bool {
+    true
+}
+fn default_clicks_warn() -> f64 {
+    15.0
+}
+fn default_clicks_high() -> f64 {
+    30.0
+}
+fn default_min_clicks() -> f64 {
+    100.0
+}
+fn default_min_page_impressions() -> f64 {
+    1000.0
+}
+fn default_max_page_ctr() -> f64 {
+    1.0
+}
+fn default_min_query_impressions() -> f64 {
+    100.0
+}
+fn default_position_warn() -> f64 {
+    2.0
+}
+fn default_position_high() -> f64 {
+    5.0
+}
+
+impl Default for AlertSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            badge: true,
+            notify: false,
+            clicks_drop_warn_pct: default_clicks_warn(),
+            clicks_drop_high_pct: default_clicks_high(),
+            min_clicks_previous: default_min_clicks(),
+            min_page_impressions: default_min_page_impressions(),
+            max_page_ctr_pct: default_max_page_ctr(),
+            min_query_impressions: default_min_query_impressions(),
+            position_drop_warn: default_position_warn(),
+            position_drop_high: default_position_high(),
+        }
+    }
+}
+
+impl AlertSettings {
+    /// Maakt van willekeurige invoer (uit de UI of een handmatig bewerkt
+    /// config.json) weer bruikbare drempels: percentages binnen 0–100,
+    /// aantallen niet negatief en "ernstig" nooit strenger dan "waarschuwing".
+    pub fn sanitized(mut self) -> Self {
+        fn clamp(value: f64, min: f64, max: f64) -> f64 {
+            if value.is_finite() {
+                value.clamp(min, max)
+            } else {
+                min
+            }
+        }
+
+        self.clicks_drop_warn_pct = clamp(self.clicks_drop_warn_pct, 0.0, 100.0);
+        self.clicks_drop_high_pct = clamp(self.clicks_drop_high_pct, 0.0, 100.0);
+        self.min_clicks_previous = clamp(self.min_clicks_previous, 0.0, 1_000_000.0);
+        self.min_page_impressions = clamp(self.min_page_impressions, 0.0, 1_000_000.0);
+        self.max_page_ctr_pct = clamp(self.max_page_ctr_pct, 0.0, 100.0);
+        self.min_query_impressions = clamp(self.min_query_impressions, 0.0, 1_000_000.0);
+        self.position_drop_warn = clamp(self.position_drop_warn, 0.0, 100.0);
+        self.position_drop_high = clamp(self.position_drop_high, 0.0, 100.0);
+
+        if self.clicks_drop_high_pct < self.clicks_drop_warn_pct {
+            self.clicks_drop_high_pct = self.clicks_drop_warn_pct;
+        }
+        if self.position_drop_high < self.position_drop_warn {
+            self.position_drop_high = self.position_drop_warn;
+        }
+        self
+    }
 }
 
 fn default_mistral_model() -> String {
@@ -80,6 +202,7 @@ impl Default for AppConfig {
             wp_app_password: None,
             pagespeed_api_key: None,
             brand: None,
+            alerts: AlertSettings::default(),
         }
     }
 }
@@ -178,5 +301,37 @@ mod tests {
         let layout = back.dashboard_layout.expect("layout moet terugkomen");
         assert_eq!(layout["hidden"][0], "b");
         assert_eq!(layout["order"][1], "b");
+    }
+
+    #[test]
+    fn config_zonder_alerts_krijgt_de_defaults() {
+        // Bestaande config.json heeft geen "alerts"; de app moet dan de
+        // standaarddrempels gebruiken in plaats van alles op nul te zetten.
+        let text = r#"{"mistral_model":"mistral-small-latest","notifications_enabled":true}"#;
+        let cfg: AppConfig = serde_json::from_str(text).expect("oude config moet leesbaar blijven");
+        assert!(cfg.alerts.enabled);
+        assert!(cfg.alerts.badge);
+        assert!(!cfg.alerts.notify);
+        assert_eq!(cfg.alerts.clicks_drop_warn_pct, 15.0);
+        assert_eq!(cfg.alerts.position_drop_high, 5.0);
+    }
+
+    #[test]
+    fn alert_drempels_worden_opgeschoond() {
+        let opgeschoond = AlertSettings {
+            clicks_drop_warn_pct: 70.0,
+            clicks_drop_high_pct: 10.0,
+            max_page_ctr_pct: -3.0,
+            min_page_impressions: -1.0,
+            position_drop_warn: 4.0,
+            position_drop_high: 1.0,
+            ..AlertSettings::default()
+        }
+        .sanitized();
+        // "Ernstig" mag nooit eerder afgaan dan "waarschuwing".
+        assert_eq!(opgeschoond.clicks_drop_high_pct, 70.0);
+        assert_eq!(opgeschoond.position_drop_high, 4.0);
+        assert_eq!(opgeschoond.max_page_ctr_pct, 0.0);
+        assert_eq!(opgeschoond.min_page_impressions, 0.0);
     }
 }

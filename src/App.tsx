@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { getAccounts, getBrand, BrandConfig } from "./lib/api";
+import { getAccounts, getBrand, getSettingsStatus, AlertSettings, DEFAULT_ALERT_SETTINGS, BrandConfig } from "./lib/api";
 import { DEFAULT_ACCOUNTS } from "./lib/constants";
 import { WHITE_LABEL_ENABLED } from "./lib/features";
 import CommandPalette from "./components/CommandPalette";
@@ -43,6 +43,8 @@ export default function App() {
   const [view, setView] = useState<ViewId>("dashboard");
   const [accounts, setAccounts] = useState<Record<string, string>>(DEFAULT_ACCOUNTS);
   const [brand, setBrandState] = useState<BrandConfig | null>(null);
+  const [alertSettings, setAlertSettings] = useState<AlertSettings>(DEFAULT_ALERT_SETTINGS);
+  const [alertCount, setAlertCount] = useState(0);
 
   useEffect(() => {
     if (!WHITE_LABEL_ENABLED) return;
@@ -64,6 +66,14 @@ export default function App() {
       .catch(() => undefined);
   }, []);
 
+  // Alert-instellingen bij het opstarten ophalen, zodat de badge en het
+  // dashboard meteen dezelfde drempels gebruiken als Instellingen.
+  useEffect(() => {
+    getSettingsStatus()
+      .then((status) => setAlertSettings(status.alerts ?? DEFAULT_ALERT_SETTINGS))
+      .catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -76,7 +86,14 @@ export default function App() {
   }, []);
 
   const views: Record<ViewId, React.ReactNode> = {
-    dashboard: <Dashboard accounts={accounts} onNavigate={(id) => setView(id as ViewId)} />,
+    dashboard: (
+      <Dashboard
+        accounts={accounts}
+        onNavigate={(id) => setView(id as ViewId)}
+        alertSettings={alertSettings}
+        onAlerts={setAlertCount}
+      />
+    ),
     keywords: <KeywordSearch accounts={accounts} />,
     rankings: <Rankings accounts={accounts} />,
     seo: <SeoAnalysis accounts={accounts} />,
@@ -98,6 +115,7 @@ export default function App() {
           setBrandState(b);
           if (b?.accent) document.documentElement.style.setProperty("--accent", b.accent);
         }}
+        onAlerts={setAlertSettings}
       />
     ),
   };
@@ -122,6 +140,11 @@ export default function App() {
             >
               <span className="nav-icon">{item.icon}</span>
               {item.label}
+              {item.id === "dashboard" && alertSettings.badge && alertCount > 0 && (
+                <span className="nav-badge" title={`${alertCount} alert${alertCount === 1 ? "" : "s"} op het dashboard`}>
+                  {alertCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>

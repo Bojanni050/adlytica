@@ -4,6 +4,7 @@ import {
   setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
   setWordpressConfig, testWordpress, setBrand, BrandConfig,
   getNotifications, setNotifications as saveNotifications, testNotification, setDataForSeo, setPagespeedKey,
+  AlertSettings, DEFAULT_ALERT_SETTINGS, setAlertSettings,
 } from "../lib/api";
 import { WHITE_LABEL_ENABLED } from "../lib/features";
 
@@ -12,6 +13,8 @@ interface Props {
   onAccounts: (a: Record<string, string>) => void;
   brand: BrandConfig | null;
   onBrand: (b: BrandConfig | null) => void;
+  /** Geeft de opgeslagen alert-instellingen terug aan App (badge + dashboard). */
+  onAlerts: (a: AlertSettings) => void;
 }
 
 const DEFAULT_BRAND: BrandConfig = {
@@ -21,7 +24,38 @@ const DEFAULT_BRAND: BrandConfig = {
   logo: null,
 };
 
-export default function Settings({ accounts, onAccounts, brand, onBrand }: Props) {
+/** Klein getalveld voor de alert-drempels, met eenheid erachter. */
+function NumberField({
+  label, suffix, value, onChange, disabled, min = 0, step = 1,
+}: {
+  label: string;
+  suffix?: string;
+  value: number;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+  min?: number;
+  step?: number;
+}) {
+  return (
+    <div>
+      <label className="field">{label}</label>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <input
+          type="number"
+          min={min}
+          step={step}
+          value={Number.isFinite(value) ? value : 0}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+          style={{ width: 90 }}
+        />
+        {suffix && <span className="hint" style={{ margin: 0 }}>{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
+export default function Settings({ accounts, onAccounts, brand, onBrand, onAlerts }: Props) {
   const [baseUrl, setBaseUrl] = useState("");
   const [token, setToken] = useState("");
   const [testMsg, setTestMsg] = useState<string | null>(null);
@@ -47,6 +81,8 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
   const [dfPassword, setDfPassword] = useState("");
   const [notifications, setNotifications] = useState(false);
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
+  const [alertCfg, setAlertCfg] = useState<AlertSettings>(DEFAULT_ALERT_SETTINGS);
+  const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [saved, setSaved] = useState<SettingsStatus | null>(null);
 
@@ -61,6 +97,7 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
       if (st.wp_url) setWpUrl(st.wp_url);
       if (st.wp_user) setWpUser(st.wp_user);
       if (st.analytics_base_url) setBaseUrl(st.analytics_base_url);
+      if (st.alerts) setAlertCfg(st.alerts);
     }).catch(() => undefined);
     getNotifications().then(setNotifications).catch(() => undefined);
   }, []);
@@ -82,6 +119,14 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
         await setDataForSeo(dfLogin.trim(), dfPassword.trim());
       }
       await saveNotifications(notifications);
+      const stored = await setAlertSettings(alertCfg);
+      setAlertCfg(stored);
+      onAlerts(stored);
+      setAlertMsg(
+        JSON.stringify(stored) === JSON.stringify(alertCfg)
+          ? null
+          : "Drempels aangepast: ernst mag nooit eerder afgaan dan een waarschuwing, dus die waarde is gelijkgetrokken."
+      );
       const nextBrand: BrandConfig = {
         name: brandName.trim() || DEFAULT_BRAND.name,
         accent: brandAccent,
@@ -498,6 +543,110 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
           </button>
           {notifyMsg && <span className="hint" style={{ margin: 0 }}>{notifyMsg}</span>}
         </div>
+
+        <h3 style={{ marginTop: 20 }}>Alerts</h3>
+        <p className="hint">
+          Het dashboard toont maximaal drie signalen: organische klikken die dalen, pagina's met veel
+          vertoningen maar een lage CTR, en zoektermen die in positie zakken. Hier stel je in vanaf
+          wanneer iets een signaal is. Wijzigingen gaan mee met de knop Opslaan.
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 18, marginBottom: 14 }}>
+          <label className="field" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 0 }}>
+            <input
+              type="checkbox"
+              checked={alertCfg.enabled}
+              onChange={(e) => setAlertCfg({ ...alertCfg, enabled: e.target.checked })}
+            />
+            Alerts tonen
+          </label>
+          <label className="field" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 0 }}>
+            <input
+              type="checkbox"
+              checked={alertCfg.badge}
+              disabled={!alertCfg.enabled}
+              onChange={(e) => setAlertCfg({ ...alertCfg, badge: e.target.checked })}
+            />
+            Badge in de zijbalk
+          </label>
+          <label className="field" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 0 }}>
+            <input
+              type="checkbox"
+              checked={alertCfg.notify}
+              disabled={!alertCfg.enabled}
+              onChange={(e) => setAlertCfg({ ...alertCfg, notify: e.target.checked })}
+            />
+            Systeemmelding bij signalen
+          </label>
+        </div>
+        <div className="form-row">
+          <NumberField
+            label="Klikdaling vanaf"
+            suffix="%"
+            value={alertCfg.clicks_drop_warn_pct}
+            disabled={!alertCfg.enabled}
+            onChange={(v) => setAlertCfg({ ...alertCfg, clicks_drop_warn_pct: v })}
+          />
+          <NumberField
+            label="Ernstige klikdaling vanaf"
+            suffix="%"
+            value={alertCfg.clicks_drop_high_pct}
+            disabled={!alertCfg.enabled}
+            onChange={(v) => setAlertCfg({ ...alertCfg, clicks_drop_high_pct: v })}
+          />
+          <NumberField
+            label="Minimaal klikken vorige periode"
+            value={alertCfg.min_clicks_previous}
+            disabled={!alertCfg.enabled}
+            onChange={(v) => setAlertCfg({ ...alertCfg, min_clicks_previous: v })}
+          />
+        </div>
+        <div className="form-row">
+          <NumberField
+            label="CTR-alert vanaf vertoningen"
+            value={alertCfg.min_page_impressions}
+            disabled={!alertCfg.enabled}
+            onChange={(v) => setAlertCfg({ ...alertCfg, min_page_impressions: v })}
+          />
+          <NumberField
+            label="Lage CTR onder"
+            suffix="%"
+            step={0.1}
+            value={alertCfg.max_page_ctr_pct}
+            disabled={!alertCfg.enabled}
+            onChange={(v) => setAlertCfg({ ...alertCfg, max_page_ctr_pct: v })}
+          />
+          <NumberField
+            label="Minimaal vertoningen zoekterm"
+            value={alertCfg.min_query_impressions}
+            disabled={!alertCfg.enabled}
+            onChange={(v) => setAlertCfg({ ...alertCfg, min_query_impressions: v })}
+          />
+        </div>
+        <div className="form-row">
+          <NumberField
+            label="Positiedaling vanaf"
+            suffix="plaatsen"
+            step={0.5}
+            value={alertCfg.position_drop_warn}
+            disabled={!alertCfg.enabled}
+            onChange={(v) => setAlertCfg({ ...alertCfg, position_drop_warn: v })}
+          />
+          <NumberField
+            label="Ernstige positiedaling vanaf"
+            suffix="plaatsen"
+            step={0.5}
+            value={alertCfg.position_drop_high}
+            disabled={!alertCfg.enabled}
+            onChange={(v) => setAlertCfg({ ...alertCfg, position_drop_high: v })}
+          />
+          <div />
+        </div>
+        {alertMsg && <p className="hint" style={{ color: "var(--warn)" }}>{alertMsg}</p>}
+        {!notifications && alertCfg.notify && (
+          <p className="hint">
+            Systeemmeldingen staan nog uit bij Meldingen hierboven; zonder die schakelaar blijft het stil.
+          </p>
+        )}
 
         <div style={{ marginTop: 20 }}>
           <button className="primary" onClick={save}>Opslaan</button>

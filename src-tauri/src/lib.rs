@@ -40,6 +40,7 @@ pub struct AppState {
     pub dataforseo_login: Mutex<Option<String>>,
     pub dataforseo_password: Mutex<Option<String>>,
     pub notifications_enabled: Mutex<bool>,
+    pub alerts: Mutex<config::AlertSettings>,
     pub trends: trends::TrendsState,
 }
 
@@ -69,6 +70,7 @@ fn persist(state: &AppState) {
     let dataforseo_login = state.dataforseo_login.lock().unwrap().clone();
     let dataforseo_password = state.dataforseo_password.lock().unwrap().clone();
     let notifications_enabled = *state.notifications_enabled.lock().unwrap();
+    let alerts = state.alerts.lock().unwrap().clone();
     let cfg = config::AppConfig {
         analytics_base_url,
         analytics_access_token: present(creds.access_token.clone()),
@@ -87,6 +89,7 @@ fn persist(state: &AppState) {
         dataforseo_login,
         dataforseo_password,
         notifications_enabled,
+        alerts,
     };
     if let Err(e) = config::save(&cfg) {
         eprintln!("Config niet opgeslagen: {e}");
@@ -111,6 +114,8 @@ pub struct SettingsStatus {
     pub wp_password_set: bool,
     pub pagespeed_key_set: bool,
     pub dataforseo_set: bool,
+    /// Instelbare drempels en schakelaars voor de dashboard-alerts.
+    pub alerts: config::AlertSettings,
 }
 
 fn analytics_client(state: &AppState) -> Result<analytics::AnalyticsClient, String> {
@@ -303,6 +308,7 @@ async fn get_settings_status(state: State<'_, AppState>) -> Result<SettingsStatu
     let pagespeed_key_set = state.pagespeed_api_key.lock().unwrap().is_some();
     let dataforseo_set = state.dataforseo_login.lock().unwrap().is_some()
         && state.dataforseo_password.lock().unwrap().is_some();
+    let alerts = state.alerts.lock().unwrap().clone();
     Ok(SettingsStatus {
         analytics_base_url: base_url,
         analytics_token_set: !creds.is_empty(),
@@ -318,7 +324,21 @@ async fn get_settings_status(state: State<'_, AppState>) -> Result<SettingsStatu
         wp_password_set,
         pagespeed_key_set,
         dataforseo_set,
+        alerts,
     })
+}
+
+/// Bewaart de alert-drempels uit Instellingen en geeft de opgeschoonde versie
+/// terug, zodat de UI meteen laat zien wat er echt is opgeslagen.
+#[tauri::command]
+async fn set_alert_settings(
+    settings: config::AlertSettings,
+    state: State<'_, AppState>,
+) -> Result<config::AlertSettings, String> {
+    let clean = settings.sanitized();
+    *state.alerts.lock().unwrap() = clean.clone();
+    persist(&state);
+    Ok(clean)
 }
 
 #[tauri::command]
@@ -723,6 +743,7 @@ async fn dataforseo_gap(
                 dataforseo_login: Mutex::new(cfg.dataforseo_login),
                 dataforseo_password: Mutex::new(cfg.dataforseo_password),
                 notifications_enabled: Mutex::new(cfg.notifications_enabled),
+                alerts: Mutex::new(cfg.alerts.clone().sanitized()),
                 trends: trends::TrendsState {
                     sidecar: Mutex::new(None),
                     python: Mutex::new(cfg.python_path),
@@ -757,6 +778,7 @@ async fn dataforseo_gap(
             set_brand,
             get_notifications,
             set_notifications,
+            set_alert_settings,
             notify_now,
             test_notification,
             set_dataforseo,
