@@ -11,12 +11,23 @@ mod wordpress;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::{Emitter, State};
+use tauri::{Manager, State};
+
+/// Voortgang van een loginpoging, zodat de UI de URL én de afloop kan ophalen
+/// zonder van events afhankelijk te zijn.
+#[derive(Default, Clone, serde::Serialize)]
+pub struct LoginState {
+    /// "idle" | "pending" | "ok" | "error"
+    pub phase: String,
+    pub message: String,
+    pub url: String,
+}
 
 #[derive(Default)]
 pub struct AppState {
     pub analytics_base_url: Mutex<Option<String>>,
     pub analytics_creds: Mutex<oauth::Credentials>,
+    pub login: Mutex<LoginState>,
     pub mistral_api_key: Mutex<Option<String>>,
     pub mistral_model: Mutex<String>,
     pub accounts: Mutex<HashMap<String, String>>,
@@ -125,9 +136,12 @@ async fn set_analytics_config(
     Ok(())
 }
 
-/// Logt in op de databron: DCR + PKCE, browser, loopback-callback.
+/// Start de login (DCR + PKCE) en geeft de authorize-URL terug. Het wachten op de
+/// callback loopt daarna in een achtergrondtaak; de UI haalt de afloop op met
+/// `analytics_login_status`. De URL komt zo als gewone returnwaarde binnen — events
+/// kunnen niet stilvallen.
 #[tauri::command]
-async fn analytics_login(
+async fn analytics_login_start(
     app: tauri::AppHandle,
     base_url: String,
     state: State<'_, AppState>,
@@ -142,29 +156,81 @@ async fn analytics_login(
     } else {
         base_url.trim().to_string()
     };
-
-    // De authorize-URL gaat meteen naar de UI, zodat je hem ook zelf kunt openen
-    // als de browser niet opent.
-    let url_app = app.clone();
-    let creds = oauth::login(&base, std::time::Duration::from_secs(300), move |url| {
-        let _ = url_app.emit("analytics-login-url", url.to_string());
-    })
-    .await?;
-    let message = if creds.refresh_token.is_some() {
-        "✓ Ingelogd — de app kan het token nu zelf vernieuwen.".to_string()
-    } else {
-        "✓ Ingelogd (zonder refresh-token, dus na verloop opnieuw inloggen).".to_string()
-    };
-    *state.analytics_base_url.lock().unwrap() = Some(base);
-    *state.analytics_creds.lock().unwrap() = creds;
+    *state.analytics_base_url.lock().unwrap() = Some(base.clone());
     persist(&state);
-    Ok(message)
+    {
+        let mut login = state.login.lock().unwrap();
+        login.phase = "pending".into();
+        login.message = "Bezig met inloggen — rond de login in je browser af.".into();
+        login.url.clear();
+    }
+
+    let (url, pending) = oauth::prepare(&base).await.map_err(|e| {
+        let mut login = state.login.lock().unwrap();
+        login.phase = "error".into();
+        login.message = format!("✗ {e}");
+        e
+    })?;
+
+    {
+        let mut login = state.login.lock().unwrap();
+        login.url = url.clone();
+        login.message = "Browser geopend. Opent hij niet? Open de URL hieronder zelf.".into();
+    }
+
+    match oauth::open_browser(&url) {
+        Ok(()) => {}
+        Err(e) => {
+            let mut login = state.login.lock().unwrap();
+            login.message = format!("Kon de browser niet openen ({e}) — open de URL hieronder zelf.");
+        }
+    }
+
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let outcome = oauth::finish(pending, std::time::Duration::from_secs(300)).await;
+        let shared = app_handle.state::<AppState>();
+        let mut login = shared.login.lock().unwrap();
+        match outcome {
+            Ok(creds) => {
+                let can_refresh = creds.refresh_token.is_some();
+                *shared.analytics_creds.lock().unwrap() = creds;
+                drop(login);
+                persist(&shared);
+                let mut login = shared.login.lock().unwrap();
+                login.phase = "ok".into();
+                login.message = if can_refresh {
+                    "✓ Ingelogd — de app kan het token nu zelf vernieuwen.".to_string()
+                } else {
+                    "✓ Ingelogd (zonder refresh-token, dus later opnieuw inloggen).".to_string()
+                };
+                login.url.clear();
+            }
+            Err(e) => {
+                login.phase = "error".into();
+                login.message = format!("✗ {e}");
+            }
+        }
+    });
+
+    Ok(url)
+}
+
+/// Voortgang van de laatste loginpoging.
+#[tauri::command]
+fn analytics_login_status(state: State<'_, AppState>) -> LoginState {
+    state.login.lock().unwrap().clone()
 }
 
 /// Wist de inloggegevens van de databron.
 #[tauri::command]
 async fn analytics_logout(state: State<'_, AppState>) -> Result<(), String> {
     *state.analytics_creds.lock().unwrap() = oauth::Credentials::default();
+    let mut login = state.login.lock().unwrap();
+    login.phase = "idle".into();
+    login.message.clear();
+    login.url.clear();
+    drop(login);
     persist(&state);
     Ok(())
 }
@@ -568,6 +634,7 @@ async fn dataforseo_gap(
             let cfg = config::load();
             AppState {
                 analytics_base_url: Mutex::new(cfg.analytics_base_url),
+                login: Mutex::new(LoginState::default()),
                 analytics_creds: Mutex::new(oauth::Credentials {
                     access_token: cfg.analytics_access_token.unwrap_or_default(),
                     refresh_token: cfg.analytics_refresh_token,
@@ -594,7 +661,8 @@ async fn dataforseo_gap(
         .invoke_handler(tauri::generate_handler![
             set_analytics_config,
             test_analytics,
-            analytics_login,
+            analytics_login_start,
+            analytics_login_status,
             analytics_logout,
             set_mistral_config,
             get_settings_status,

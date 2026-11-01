@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
-  setAnalyticsConfig, testAnalytics, analyticsLogin, analyticsLogout, onLoginUrl,
+  setAnalyticsConfig, testAnalytics, analyticsLoginStart, analyticsLoginStatus, analyticsLogout,
   setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
   setWordpressConfig, testWordpress, setBrand, BrandConfig,
   getNotifications, setNotifications as saveNotifications, testNotification, setDataForSeo, setPagespeedKey,
@@ -49,16 +49,6 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [saved, setSaved] = useState<SettingsStatus | null>(null);
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    onLoginUrl(setLoginUrl)
-      .then((stop) => {
-        unlisten = stop;
-      })
-      .catch(() => undefined);
-    return () => unlisten?.();
-  }, []);
 
   useEffect(() => {
     getSettingsStatus().then((st) => {
@@ -134,10 +124,22 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
 
   async function login() {
     setLoginUrl(null);
-    setLoginMsg("Bezig met inloggen — rond de login in je browser af…");
+    setLoginMsg("Bezig met inloggen…");
     try {
-      setLoginMsg(await analyticsLogin(baseUrl.trim()));
-      setSaved(await getSettingsStatus());
+      // De URL komt direct terug; daarna pollen we de afloop, zodat niets aan een
+      // event of aan een geslaagde browserstart hangt.
+      setLoginUrl(await analyticsLoginStart(baseUrl.trim()));
+      for (let i = 0; i < 180; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const status = await analyticsLoginStatus();
+        setLoginUrl(status.url || null);
+        if (status.phase === "ok" || status.phase === "error") {
+          setLoginMsg(status.message);
+          if (status.phase === "ok") setSaved(await getSettingsStatus());
+          return;
+        }
+      }
+      setLoginMsg("Geen login ontvangen binnen drie minuten — probeer het opnieuw.");
     } catch (e) {
       setLoginMsg(`✗ ${e}`);
     }
@@ -186,6 +188,28 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
       <p className="subtitle">Databron (analytics-mcp) en accountconfiguratie</p>
 
       {status && <div className="card" style={{ marginBottom: 16, borderColor: "var(--accent)" }}>{status}</div>}
+
+      {(loginMsg || loginUrl) && (
+        <div className="card" style={{ marginBottom: 16, borderColor: "var(--accent)" }}>
+          <strong>Inloggen op de databron</strong>
+          {loginMsg && <div style={{ marginTop: 6 }}>{loginMsg}</div>}
+          {loginUrl && (
+            <>
+              <div className="hint" style={{ marginTop: 8 }}>
+                Open deze URL in je browser (de login ronduit daarna vanzelf af):
+              </div>
+              <code style={{ display: "block", marginTop: 4, wordBreak: "break-all", userSelect: "all" }}>
+                {loginUrl}
+              </code>
+            </>
+          )}
+          {saved?.config_path && (
+            <div className="hint" style={{ marginTop: 8 }}>
+              Logboek met elke stap: {saved.config_path.replace(/config\.json$/, "login.log")}
+            </div>
+          )}
+        </div>
+      )}
       {saved?.config_path && (
         <p className="hint" style={{ marginBottom: 16 }}>
           Instellingen worden bewaard in: {saved.config_path}
@@ -215,13 +239,6 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
             <span className="hint" style={{ alignSelf: "center" }}>{loginMsg ?? testMsg}</span>
           )}
         </div>
-        {loginUrl && (
-          <p className="hint" style={{ wordBreak: "break-all" }}>
-            Opent je browser niet? Open deze URL dan zelf:
-            <br />
-            <code style={{ userSelect: "all" }}>{loginUrl}</code>
-          </p>
-        )}
         <p className="hint">
           De app opent je browser en vangt de login lokaal op; er komt geen sleutel in de app te staan.
           {saved?.analytics_can_refresh

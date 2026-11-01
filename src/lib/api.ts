@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 
 export interface QueryParams {
   connector: string;
@@ -43,20 +42,25 @@ export async function testAnalytics(): Promise<string> {
   return invoke<string>("test_analytics");
 }
 
-/**
- * Logt in op de databron: de app registreert zich bij de service (DCR), opent je
- * browser voor de Google-login en vangt de code op een lokale poort op.
- */
-export async function analyticsLogin(baseUrl: string): Promise<string> {
-  return invoke<string>("analytics_login", { baseUrl });
+export interface LoginStatus {
+  phase: "idle" | "pending" | "ok" | "error";
+  message: string;
+  /** De authorize-URL; blijft staan zolang de login loopt, zodat je hem zelf kunt openen. */
+  url: string;
 }
 
 /**
- * Ontvangt de authorize-URL zodra de login begint, zodat je hem ook zelf in een
- * browser kunt openen als de app dat niet doet. Geeft een functie terug om te stoppen.
+ * Start de login op de databron: de app registreert zich bij de service (DCR),
+ * krijgt een authorize-URL terug en zet een listener op een lokale poort klaar.
+ * De URL is een gewone returnwaarde, dus altijd beschikbaar in de UI.
  */
-export async function onLoginUrl(handler: (url: string) => void): Promise<() => void> {
-  return listen<string>("analytics-login-url", (event) => handler(event.payload));
+export async function analyticsLoginStart(baseUrl: string): Promise<string> {
+  return invoke<string>("analytics_login_start", { baseUrl });
+}
+
+/** Voortgang van de laatste loginpoging ("idle" | "pending" | "ok" | "error"). */
+export async function analyticsLoginStatus(): Promise<LoginStatus> {
+  return invoke<LoginStatus>("analytics_login_status");
 }
 
 /** Wist de inloggegevens van de databron. */

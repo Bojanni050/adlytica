@@ -97,7 +97,7 @@ fn encode_query(pairs: &[(&str, &str)]) -> String {
     serializer.finish()
 }
 
-fn open_browser(url: &str) -> Result<(), String> {
+pub fn open_browser(url: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         // `cmd /C start` leest de opdrachtregel opnieuw en ziet de '&' in de
@@ -260,12 +260,20 @@ async fn post_form(url: &str, pairs: &[(&str, &str)]) -> Result<TokenResponse, S
     serde_json::from_str(&text).map_err(|e| format!("onverwacht token-antwoord: {e} — {text}"))
 }
 
-/// Volledige login: registreren, browser openen, code inwisselen voor een token.
-///
-/// `on_url` krijgt de authorize-URL voordat de browser opengaat, zodat de app hem
-/// kan tonen. Lukt het openen van de browser niet, dan wachten we alsnog op de
-/// callback — de gebruiker kan de URL dan zelf openen.
-pub async fn login<F: FnOnce(&str)>(base_url: &str, timeout: Duration, on_url: F) -> Result<Credentials, String> {
+/// Een gestarte login: de listener staat open en de code kan worden ingewisseld.
+pub struct PendingLogin {
+    token_endpoint: String,
+    client_id: String,
+    redirect_uri: String,
+    verifier: String,
+    state: String,
+    listener: TcpListener,
+}
+
+/// Registreert de app, zet de callback-listener klaar en geeft de authorize-URL
+/// terug. De URL is een gewone returnwaarde (geen event), zodat de UI hem altijd
+/// kan tonen — ook als de browser niet opent.
+pub async fn prepare(base_url: &str) -> Result<(String, PendingLogin), String> {
     let base = base_url.trim().trim_end_matches('/').to_string();
     if base.is_empty() {
         return Err("Vul eerst de service-URL in bij Instellingen.".into());
@@ -299,29 +307,44 @@ pub async fn login<F: FnOnce(&str)>(base_url: &str, timeout: Duration, on_url: F
             ("code_challenge_method", "S256"),
         ])
     );
+    log_step(&format!("authorize-URL klaar ({redirect_uri})"));
 
-    on_url(&auth_url);
-    log_step(&format!("authorize-URL klaar ({redirect_uri}); browser openen"));
-    match open_browser(&auth_url) {
-        // Niet fataal: de URL staat in de app, de callback-listener blijft luisteren.
-        Ok(()) => log_step("browser gestart"),
-        Err(e) => log_step(&format!("browser openen mislukte: {e}")),
-    }
+    Ok((
+        auth_url,
+        PendingLogin {
+            token_endpoint: metadata.token_endpoint,
+            client_id,
+            redirect_uri,
+            verifier,
+            state,
+            listener,
+        },
+    ))
+}
+
+/// Wacht op de callback en wisselt de code in voor een token. Dit blokkeert tot de
+/// gebruiker inlogt of de time-out verstrijkt, dus hoort in een achtergrondtaak.
+pub async fn finish(pending: PendingLogin, timeout: Duration) -> Result<Credentials, String> {
+    let PendingLogin {
+        token_endpoint,
+        client_id,
+        redirect_uri,
+        verifier,
+        state,
+        listener,
+    } = pending;
 
     let wait_result = tokio::task::spawn_blocking(move || wait_for_callback(listener, timeout))
         .await
         .map_err(|e| format!("callback-taak mislukte: {e}"))?;
-    let (code, returned_state) = match wait_result {
-        Ok(pair) => pair,
-        Err(e) => return Err(format!("{e}\nOpen deze URL zelf in je browser:\n{auth_url}")),
-    };
+    let (code, returned_state) = wait_result?;
     if returned_state != state {
         return Err("de callback hoorde niet bij deze loginpoging (state verschilt)".into());
     }
 
     log_step("callback ontvangen; code inwisselen");
     let token = post_form(
-        &metadata.token_endpoint,
+        &token_endpoint,
         &[
             ("grant_type", "authorization_code"),
             ("code", &code),
@@ -331,6 +354,7 @@ pub async fn login<F: FnOnce(&str)>(base_url: &str, timeout: Duration, on_url: F
         ],
     )
     .await?;
+    log_step("token ontvangen");
 
     Ok(Credentials {
         access_token: token.access_token,
