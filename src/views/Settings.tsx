@@ -129,7 +129,9 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
       // De URL komt direct terug; daarna pollen we de afloop, zodat niets aan een
       // event of aan een geslaagde browserstart hangt.
       setLoginUrl(await analyticsLoginStart(baseUrl.trim()));
-      for (let i = 0; i < 180; i++) {
+      // De backend wacht 300 s op de callback; net zo lang doorpollen, anders zou
+      // de UI het opgeven terwijl de backend de login nog kan afronden.
+      for (let i = 0; i < 330; i++) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const status = await analyticsLoginStatus();
         setLoginUrl(status.url || null);
@@ -139,7 +141,7 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
           return;
         }
       }
-      setLoginMsg("Geen login ontvangen binnen drie minuten — probeer het opnieuw.");
+      setLoginMsg("Geen login ontvangen binnen vijf minuten — probeer het opnieuw.");
     } catch (e) {
       setLoginMsg(`✗ ${e}`);
     }
@@ -196,7 +198,7 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
           {loginUrl && (
             <>
               <div className="hint" style={{ marginTop: 8 }}>
-                Open deze URL in je browser (de login ronduit daarna vanzelf af):
+                Open deze URL in je browser (de login loopt daarna vanzelf af):
               </div>
               <code style={{ display: "block", marginTop: 4, wordBreak: "break-all", userSelect: "all" }}>
                 {loginUrl}
