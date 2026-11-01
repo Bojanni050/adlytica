@@ -52,25 +52,41 @@ fn present(value: String) -> Option<String> {
 }
 
 fn persist(state: &AppState) {
+    // Elke lock in zijn eigen statement: guard leeft nooit verder dan de regel
+    // zelf, dus nooit "base_url vasthouden terwijl we nog tien andere locks pakken".
     let creds = state.analytics_creds.lock().unwrap().clone();
+    let analytics_base_url = state.analytics_base_url.lock().unwrap().clone();
+    let mistral_api_key = state.mistral_api_key.lock().unwrap().clone();
+    let mistral_model = state.mistral_model.lock().unwrap().clone();
+    let accounts = state.accounts.lock().unwrap().clone();
+    let python_path = state.trends.python.lock().unwrap().clone();
+    let dashboard_layout = state.dashboard_layout.lock().unwrap().clone();
+    let wp_url = state.wp_url.lock().unwrap().clone();
+    let wp_user = state.wp_user.lock().unwrap().clone();
+    let wp_app_password = state.wp_app_password.lock().unwrap().clone();
+    let brand = state.brand.lock().unwrap().clone();
+    let pagespeed_api_key = state.pagespeed_api_key.lock().unwrap().clone();
+    let dataforseo_login = state.dataforseo_login.lock().unwrap().clone();
+    let dataforseo_password = state.dataforseo_password.lock().unwrap().clone();
+    let notifications_enabled = *state.notifications_enabled.lock().unwrap();
     let cfg = config::AppConfig {
-        analytics_base_url: state.analytics_base_url.lock().unwrap().clone(),
+        analytics_base_url,
         analytics_access_token: present(creds.access_token.clone()),
         analytics_refresh_token: creds.refresh_token.clone(),
         analytics_client_id: creds.client_id.clone(),
-        mistral_api_key: state.mistral_api_key.lock().unwrap().clone(),
-        mistral_model: state.mistral_model.lock().unwrap().clone(),
-        accounts: state.accounts.lock().unwrap().clone(),
-        python_path: state.trends.python.lock().unwrap().clone(),
-        dashboard_layout: state.dashboard_layout.lock().unwrap().clone(),
-        wp_url: state.wp_url.lock().unwrap().clone(),
-        wp_user: state.wp_user.lock().unwrap().clone(),
-        wp_app_password: state.wp_app_password.lock().unwrap().clone(),
-        brand: state.brand.lock().unwrap().clone(),
-        pagespeed_api_key: state.pagespeed_api_key.lock().unwrap().clone(),
-        dataforseo_login: state.dataforseo_login.lock().unwrap().clone(),
-        dataforseo_password: state.dataforseo_password.lock().unwrap().clone(),
-        notifications_enabled: *state.notifications_enabled.lock().unwrap(),
+        mistral_api_key,
+        mistral_model,
+        accounts,
+        python_path,
+        dashboard_layout,
+        wp_url,
+        wp_user,
+        wp_app_password,
+        brand,
+        pagespeed_api_key,
+        dataforseo_login,
+        dataforseo_password,
+        notifications_enabled,
     };
     if let Err(e) = config::save(&cfg) {
         eprintln!("Config niet opgeslagen: {e}");
@@ -164,7 +180,6 @@ async fn analytics_login_start(
         login.message = "Bezig met inloggen — rond de login in je browser af.".into();
         login.url.clear();
     }
-
     let (url, pending) = oauth::prepare(&base).await.map_err(|e| {
         let mut login = state.login.lock().unwrap();
         login.phase = "error".into();
@@ -264,31 +279,39 @@ async fn get_accounts(state: State<'_, AppState>) -> Result<HashMap<String, Stri
 
 #[tauri::command]
 async fn get_settings_status(state: State<'_, AppState>) -> Result<SettingsStatus, String> {
+    // Locks allemaal in eigen statements (geen lang-levende guard binnen de
+    // struct-literal) — zelfde reden als bij persist.
+    let base_url = state
+        .analytics_base_url
+        .lock()
+        .unwrap()
+        .clone()
+        .or_else(|| Some(analytics::DEFAULT_BASE_URL.to_string()));
+    let creds = state.analytics_creds.lock().unwrap().clone();
+    let mistral_key_set = state.mistral_api_key.lock().unwrap().is_some();
+    let mistral_model = state.mistral_model.lock().unwrap().clone();
+    let accounts = state.accounts.lock().unwrap().clone();
+    let python_path = state.trends.python.lock().unwrap().clone();
+    let wp_url = state.wp_url.lock().unwrap().clone();
+    let wp_user = state.wp_user.lock().unwrap().clone();
+    let wp_password_set = state.wp_app_password.lock().unwrap().is_some();
+    let pagespeed_key_set = state.pagespeed_api_key.lock().unwrap().is_some();
+    let dataforseo_set = state.dataforseo_login.lock().unwrap().is_some()
+        && state.dataforseo_password.lock().unwrap().is_some();
     Ok(SettingsStatus {
-        analytics_base_url: state
-            .analytics_base_url
-            .lock()
-            .unwrap()
-            .clone()
-            .or_else(|| Some(analytics::DEFAULT_BASE_URL.to_string())),
-        analytics_token_set: !state.analytics_creds.lock().unwrap().is_empty(),
-        analytics_can_refresh: state
-            .analytics_creds
-            .lock()
-            .unwrap()
-            .refresh_token
-            .is_some(),
-        mistral_key_set: state.mistral_api_key.lock().unwrap().is_some(),
-        mistral_model: state.mistral_model.lock().unwrap().clone(),
-        accounts: state.accounts.lock().unwrap().clone(),
-        python_path: state.trends.python.lock().unwrap().clone(),
+        analytics_base_url: base_url,
+        analytics_token_set: !creds.is_empty(),
+        analytics_can_refresh: creds.refresh_token.is_some(),
+        mistral_key_set,
+        mistral_model,
+        accounts,
+        python_path,
         config_path: config::config_path().map(|p| p.to_string_lossy().into_owned()),
-        wp_url: state.wp_url.lock().unwrap().clone(),
-        wp_user: state.wp_user.lock().unwrap().clone(),
-        wp_password_set: state.wp_app_password.lock().unwrap().is_some(),
-        pagespeed_key_set: state.pagespeed_api_key.lock().unwrap().is_some(),
-        dataforseo_set: state.dataforseo_login.lock().unwrap().is_some()
-            && state.dataforseo_password.lock().unwrap().is_some(),
+        wp_url,
+        wp_user,
+        wp_password_set,
+        pagespeed_key_set,
+        dataforseo_set,
     })
 }
 

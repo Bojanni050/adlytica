@@ -100,20 +100,12 @@ fn encode_query(pairs: &[(&str, &str)]) -> String {
 pub fn open_browser(url: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        // `cmd /C start` leest de opdrachtregel opnieuw en ziet de '&' in de
-        // authorize-URL als commando-scheiding; zonder quotes opent er niets
-        // (of een afgekapte URL). De URL moet dus expliciet tussen quotes staan.
-        let quoted = format!("\"{url}\"");
-        if std::process::Command::new("cmd")
-            .args(["/C", "start", "", &quoted])
-            .spawn()
-            .is_ok()
-        {
-            return Ok(());
-        }
-        // explorer.exe opent de standaardbrowser zonder tussenkomst van cmd.
-        return std::process::Command::new("explorer")
-            .arg(url)
+        // Zonder cmd: `cmd /C start` verprutst de '&' in de authorize-URL en
+        // explorer.exe opent bij zulke URL de Documenten-map. Bewezen werkend
+        // op deze machine: rundll32 url.dll,FileProtocolHandler <url> — belt
+        // ShellExecute met de volledige URL, zonder tussenkomst van cmd.
+        return std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", url])
             .spawn()
             .map(|_| ())
             .map_err(|e| format!("kon de browser niet openen: {e}"));
