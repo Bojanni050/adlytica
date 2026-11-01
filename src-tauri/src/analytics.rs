@@ -10,7 +10,9 @@
 
 use crate::oauth::{self, Credentials};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// Standaardadres van de analytics-service.
 pub const DEFAULT_BASE_URL: &str = "https://analytics.studiovanderheide.nl";
@@ -32,6 +34,109 @@ pub struct QueryParams {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QueryResult {
     pub rows: Vec<serde_json::Value>,
+}
+
+/// Hoe lang een queryresultaat hergebruikt mag worden. Vijf minuten is kort
+/// genoeg om het "nu" te mogen noemen en lang genoeg om heen-en-weer klikken
+/// tussen views geen nieuwe request te laten kosten.
+pub const CACHE_TTL_SECS: u64 = 300;
+
+/// Stabiele sleutel voor de cache: dezelfde vraag levert altijd dezelfde
+/// string op. `date_to` zonder waarde telt als vandaag, want dat is wat er
+/// uiteindelijk naar de service gaat.
+pub fn cache_key(p: &QueryParams) -> String {
+    let mut fields = p.fields.clone();
+    for group in &p.group_by {
+        if !fields.contains(group) {
+            fields.push(group.clone());
+        }
+    }
+    serde_json::json!({
+        "connector": p.connector,
+        "account": p.account,
+        "fields": fields,
+        "date_from": p.date_from,
+        "date_to": p.date_to.clone().unwrap_or_else(today_utc),
+        "group_by": p.group_by,
+        "options": p.options,
+        "limit": p.limit,
+    })
+    .to_string()
+}
+
+#[derive(Debug, Serialize)]
+pub struct CacheStats {
+    pub entries: usize,
+    pub hits: u64,
+    pub misses: u64,
+    pub ttl_seconds: u64,
+}
+
+#[derive(Debug)]
+struct CacheEntry {
+    rows: Vec<serde_json::Value>,
+    stored_at: Instant,
+}
+
+/// Kleine in-memory cache per vraag (connector, account, velden, datumbereik).
+/// Bewust in het geheugen en niet op schijf: na een herstart is ophalen bij de
+/// bron de enige juiste stap.
+#[derive(Debug, Default)]
+pub struct QueryCache {
+    entries: HashMap<String, CacheEntry>,
+    hits: u64,
+    misses: u64,
+}
+
+impl QueryCache {
+    fn ttl() -> Duration {
+        Duration::from_secs(CACHE_TTL_SECS)
+    }
+
+    pub fn get(&mut self, key: &str) -> Option<Vec<serde_json::Value>> {
+        let fresh = self
+            .entries
+            .get(key)
+            .map(|entry| entry.stored_at.elapsed() < Self::ttl())
+            .unwrap_or(false);
+        if fresh {
+            self.hits += 1;
+            return self.entries.get(key).map(|entry| entry.rows.clone());
+        }
+        // Verlopen of onbekend: opruimen en als miss tellen.
+        self.entries.remove(key);
+        self.misses += 1;
+        None
+    }
+
+    pub fn put(&mut self, key: String, rows: Vec<serde_json::Value>) {
+        // Verlopen rijen meteen opruimen, zodat de cache niet groeit met
+        // datumbereiken die je nooit meer opvraagt.
+        let ttl = Self::ttl();
+        self.entries.retain(|_, entry| entry.stored_at.elapsed() < ttl);
+        self.entries.insert(
+            key,
+            CacheEntry {
+                rows,
+                stored_at: Instant::now(),
+            },
+        );
+    }
+
+    pub fn clear(&mut self) -> usize {
+        let removed = self.entries.len();
+        self.entries.clear();
+        removed
+    }
+
+    pub fn stats(&self) -> CacheStats {
+        CacheStats {
+            entries: self.entries.len(),
+            hits: self.hits,
+            misses: self.misses,
+            ttl_seconds: CACHE_TTL_SECS,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -276,7 +381,53 @@ impl AnalyticsClient {
 
 #[cfg(test)]
 mod tests {
-    use super::civil_from_days;
+    use super::{cache_key, civil_from_days, QueryCache, QueryParams};
+
+    fn params(date_from: &str, date_to: Option<&str>) -> QueryParams {
+        QueryParams {
+            connector: "searchconsole".into(),
+            account: "sc-domain:example.nl".into(),
+            fields: vec!["date".into(), "clicks".into()],
+            date_from: Some(date_from.into()),
+            date_to: date_to.map(|value| value.to_string()),
+            group_by: vec!["date".into()],
+            options: None,
+            limit: Some(500),
+        }
+    }
+
+    #[test]
+    fn cache_sleutel_is_stabiel_en_periode_gevoelig() {
+        let first = cache_key(&params("2026-10-01", Some("2026-10-31")));
+        let second = cache_key(&params("2026-10-01", Some("2026-10-31")));
+        let other = cache_key(&params("2026-09-01", Some("2026-10-31")));
+        assert_eq!(first, second);
+        assert_ne!(first, other);
+    }
+
+    #[test]
+    fn cache_sleutel_behandelt_lege_date_to_als_vandaag() {
+        let empty = cache_key(&params("2026-10-01", None));
+        let explicit = cache_key(&params("2026-10-01", Some(&super::today_utc())));
+        assert_eq!(empty, explicit);
+    }
+
+    #[test]
+    fn cache_onthoudt_resultaten_en_telt_hits() {
+        let mut cache = QueryCache::default();
+        assert!(cache.get("vraag").is_none());
+        assert_eq!(cache.stats().misses, 1);
+
+        cache.put("vraag".to_string(), vec![serde_json::json!({"clicks": 1})]);
+        let hit = cache.get("vraag").expect("hit");
+        assert_eq!(hit.len(), 1);
+        assert_eq!(cache.stats().hits, 1);
+        assert_eq!(cache.stats().entries, 1);
+
+        assert_eq!(cache.clear(), 1);
+        assert!(cache.get("vraag").is_none());
+        assert_eq!(cache.stats().entries, 0);
+    }
 
     #[test]
     fn civil_from_days_datums() {

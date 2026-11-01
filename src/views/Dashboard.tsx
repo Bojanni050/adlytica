@@ -3,7 +3,7 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { analyticsQuery, num, fmt, dateNDaysAgo, QueryParams, Row, notifyNow, AlertSettings, DEFAULT_ALERT_SETTINGS } from "../lib/api";
+import { analyticsQuery, clearAnalyticsCache, num, fmt, dateNDaysAgo, QueryParams, Row, notifyNow, AlertSettings, DEFAULT_ALERT_SETTINGS } from "../lib/api";
 import { exportPdf } from "../lib/pdf";
 import { shiftDate, useDateRange } from "../lib/dateRange";
 import { buildDashboardAlerts, DashboardAlert } from "../lib/alerts";
@@ -708,6 +708,29 @@ const WIDGETS: WidgetDef[] = [
 
 const WIDGET_IDS = WIDGETS.map((widget) => widget.id);
 
+/** Welke databron een kaart vult — bepaalt bij welke fout de kaart een
+ *  waarschuwing toont in plaats van lege cijfers. */
+export type WidgetConnector = "searchconsole" | "google_ads" | "googleanalytics4";
+
+const WIDGET_CONNECTOR: Record<string, WidgetConnector> = {
+  "kpi-clicks": "searchconsole",
+  "kpi-impressions": "searchconsole",
+  "kpi-spend": "google_ads",
+  "kpi-conversions": "google_ads",
+  "kpi-sessions": "googleanalytics4",
+  "kpi-users": "googleanalytics4",
+  "chart-organic": "searchconsole",
+  "chart-paid": "google_ads",
+  "chart-spend": "google_ads",
+  "chart-sessions": "googleanalytics4",
+  "table-pages": "searchconsole",
+  "table-queries": "searchconsole",
+  "opportunities": "searchconsole",
+  "anomaly-pages": "searchconsole",
+  "anomaly-queries": "searchconsole",
+  "cannibalisation": "searchconsole",
+};
+
 function WidgetSkeleton({ span }: { span: WidgetSpan }) {
   return (
     <div className={`widget-skeleton${span <= 2 ? " compact" : ""}`}>
@@ -733,12 +756,15 @@ interface WidgetFrameProps {
   onDragLeave: (event: React.DragEvent, id: string) => void;
   onDrop: (event: React.DragEvent, id: string) => void;
   onDragEnd: () => void;
+  /** Fout van de databron achter deze kaart, of null als alles goed ging. */
+  sourceError?: string | null;
   children: React.ReactNode;
 }
 
 function WidgetFrame({
   def, editMode, loading, dragging, dragOver, index, visibleCount,
-  onHide, onMove, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, children,
+  onHide, onMove, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd,
+  sourceError, children,
 }: WidgetFrameProps) {
   return (
     <section
@@ -765,7 +791,16 @@ function WidgetFrame({
         </div>
       </header>
       <div className="widget-body">
-        {loading ? <WidgetSkeleton span={def.span} /> : children}
+        {sourceError ? (
+          <div className="widget-source-error" title={sourceError}>
+            <strong>Databron niet bereikbaar</strong>
+            <span>{sourceError}</span>
+          </div>
+        ) : loading ? (
+          <WidgetSkeleton span={def.span} />
+        ) : (
+          children
+        )}
       </div>
       {editMode && (
         <div className="widget-editbar">
@@ -812,6 +847,9 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
   const [loading, setLoading] = useState(true);
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Fout per databron, zodat een kapotte connector alleen zijn eigen kaarten
+  // markeert in plaats van het hele dashboard.
+  const [connectorErrors, setConnectorErrors] = useState<Record<string, string>>({});
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -847,12 +885,15 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
     if (!layoutLoaded) return;
     let cancelled = false;
     const errors: string[] = [];
+    const failed = new Map<string, string>();
 
     async function safeQuery(params: QueryParams): Promise<Row[]> {
       try {
         return await analyticsQuery(params);
       } catch (exception) {
-        errors.push(String(exception));
+        const message = String(exception);
+        errors.push(message);
+        if (!failed.has(params.connector)) failed.set(params.connector, message);
         return [];
       }
     }
@@ -919,6 +960,7 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
       if (cancelled) return;
       setData({ gsc, ads, ga4, queries, pages, pageDaily, queryDaily, queryPage, gscPrevious, queriesPrevious });
       setError(errors.length > 0 ? errors[0] : null);
+      setConnectorErrors(Object.fromEntries(failed));
       setUpdatedAt(new Date());
       setLoading(false);
       setLoadedOnce(true);
@@ -1142,10 +1184,19 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
           <button
             type="button"
             className="ghost icon-btn"
-            onClick={() => setReloadKey((key) => key + 1)}
+            onClick={async () => {
+              // Eerst de cache leegmaken, anders serveert de backend binnen
+              // vijf minuten gewoon hetzelfde antwoord terug.
+              try {
+                await clearAnalyticsCache();
+              } catch {
+                // Leegmaken mag mislukken; verversen gaat gewoon door.
+              }
+              setReloadKey((key) => key + 1);
+            }}
             disabled={loading}
-            title="Data verversen"
-            aria-label="Data verversen"
+            title="Nu vernieuwen (cache leegmaken en opnieuw ophalen)"
+            aria-label="Nu vernieuwen"
           >
             <span className={loading ? "spin" : undefined}>↻</span>
           </button>
@@ -1302,6 +1353,7 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onDragEnd={handleDragEnd}
+              sourceError={connectorErrors[WIDGET_CONNECTOR[widget.id]] ?? null}
             >
               {widget.render(data, rangeDays)}
             </WidgetFrame>

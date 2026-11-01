@@ -5,6 +5,7 @@ import {
   setWordpressConfig, testWordpress, setBrand, BrandConfig,
   getNotifications, setNotifications as saveNotifications, testNotification, setDataForSeo, setPagespeedKey,
   AlertSettings, DEFAULT_ALERT_SETTINGS, setAlertSettings,
+  CacheStats, clearAnalyticsCache, getAnalyticsCacheStats,
 } from "../lib/api";
 import { WHITE_LABEL_ENABLED } from "../lib/features";
 
@@ -85,6 +86,8 @@ export default function Settings({ accounts, onAccounts, brand, onBrand, onAlert
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [saved, setSaved] = useState<SettingsStatus | null>(null);
+  const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
+  const [cacheMsg, setCacheMsg] = useState<string | null>(null);
 
   useEffect(() => {
     getSettingsStatus().then((st) => {
@@ -100,7 +103,18 @@ export default function Settings({ accounts, onAccounts, brand, onBrand, onAlert
       if (st.alerts) setAlertCfg(st.alerts);
     }).catch(() => undefined);
     getNotifications().then(setNotifications).catch(() => undefined);
+    getAnalyticsCacheStats().then(setCacheStats).catch(() => undefined);
   }, []);
+
+  async function clearCache() {
+    try {
+      const cleared = await clearAnalyticsCache();
+      setCacheStats(await getAnalyticsCacheStats());
+      setCacheMsg(`${cleared} resultaat${cleared === 1 ? "" : "en"} uit de cache gehaald.`);
+    } catch (exception) {
+      setCacheMsg(String(exception));
+    }
+  }
 
   async function save() {
     try {
@@ -330,6 +344,23 @@ export default function Settings({ accounts, onAccounts, brand, onBrand, onAlert
             <input type="text" value={ga4Account} onChange={(e) => setGa4Account(e.target.value)} />
           </div>
         </div>
+
+        <h3 style={{ marginTop: 20 }}>Querycache</h3>
+        <div className="form-row">
+          <button className="ghost" type="button" onClick={clearCache}>Cache leegmaken</button>
+          <span className="hint" style={{ alignSelf: "center" }}>
+            {cacheMsg
+              ?? (cacheStats
+                ? `${cacheStats.entries} bewaard · ${cacheStats.hits} hergebruikt · ${cacheStats.misses} opgehaald`
+                : "Nog niets opgehaald in deze sessie.")}
+          </span>
+        </div>
+        <p className="hint">
+          Antwoorden van de databron worden{" "}
+          {cacheStats ? Math.round(cacheStats.ttl_seconds / 60) : 5} minuten hergebruikt, zodat
+          wisselen tussen views niet elke keer opnieuw hoeft te wachten. Op het dashboard haalt
+          "Nu vernieuwen" alles vers op.
+        </p>
 
         <h3 style={{ marginTop: 20 }}>Adly (AI-assistent)</h3>
         <div className="form-row">

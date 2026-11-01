@@ -13,10 +13,33 @@ export interface QueryParams {
 
 export type Row = Record<string, unknown>;
 
-/** Leest bij de self-hosted analytics-service (GA4, Search Console, Google Ads). */
-export async function analyticsQuery(params: QueryParams): Promise<Row[]> {
-  const result = await invoke<{ rows: Row[] }>("analytics_query", { params });
+/** Leest bij de self-hosted analytics-service (GA4, Search Console, Google Ads).
+ *  Resultaten worden vijf minuten hergebruikt; `refresh: true` slaat de cache over. */
+export async function analyticsQuery(
+  params: QueryParams,
+  options: { refresh?: boolean } = {}
+): Promise<Row[]> {
+  const result = await invoke<{ rows: Row[] }>("analytics_query", {
+    params,
+    refresh: options.refresh ?? false,
+  });
   return result.rows ?? [];
+}
+
+export interface CacheStats {
+  entries: number;
+  hits: number;
+  misses: number;
+  ttl_seconds: number;
+}
+
+/** Leegt de querycache; geeft het aantal weggegooide resultaten terug. */
+export async function clearAnalyticsCache(): Promise<number> {
+  return invoke<number>("analytics_cache_clear");
+}
+
+export async function getAnalyticsCacheStats(): Promise<CacheStats> {
+  return invoke<CacheStats>("analytics_cache_stats");
 }
 
 export async function analyticsAction(

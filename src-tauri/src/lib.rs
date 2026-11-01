@@ -42,6 +42,8 @@ pub struct AppState {
     pub notifications_enabled: Mutex<bool>,
     pub alerts: Mutex<config::AlertSettings>,
     pub actions: Mutex<Vec<config::ActionItem>>,
+    /// Hergebruik van queryresultaten (5 minuten), zie `analytics::QueryCache`.
+    pub query_cache: Mutex<analytics::QueryCache>,
     pub trends: trends::TrendsState,
 }
 
@@ -479,12 +481,33 @@ async fn record_rank_points(points: Vec<rankings::RankPayload>) -> Result<rankin
 #[tauri::command]
 async fn analytics_query(
     params: analytics::QueryParams,
+    refresh: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<analytics::QueryResult, String> {
+    let key = analytics::cache_key(&params);
+    if !refresh.unwrap_or(false) {
+        // Guard in een eigen statement: nooit een lock vasthouden over een await.
+        let cached = state.query_cache.lock().unwrap().get(&key);
+        if let Some(rows) = cached {
+            return Ok(analytics::QueryResult { rows });
+        }
+    }
     let client = analytics_client(&state)?;
     let result = client.get_data(&params).await;
     persist_refreshed_creds(&state, &client);
-    result.map_err(|e| e.to_string())
+    let result = result.map_err(|e| e.to_string())?;
+    state.query_cache.lock().unwrap().put(key, result.rows.clone());
+    Ok(result)
+}
+
+#[tauri::command]
+fn analytics_cache_clear(state: State<'_, AppState>) -> usize {
+    state.query_cache.lock().unwrap().clear()
+}
+
+#[tauri::command]
+fn analytics_cache_stats(state: State<'_, AppState>) -> analytics::CacheStats {
+    state.query_cache.lock().unwrap().stats()
 }
 
 #[tauri::command]
@@ -767,6 +790,7 @@ async fn dataforseo_gap(
                 notifications_enabled: Mutex::new(cfg.notifications_enabled),
                 alerts: Mutex::new(cfg.alerts.clone().sanitized()),
                 actions: Mutex::new(config::sanitized_actions(cfg.actions.clone())),
+                query_cache: Mutex::new(analytics::QueryCache::default()),
                 trends: trends::TrendsState {
                     sidecar: Mutex::new(None),
                     python: Mutex::new(cfg.python_path),
@@ -783,6 +807,8 @@ async fn dataforseo_gap(
             get_settings_status,
             get_accounts,
             analytics_query,
+            analytics_cache_clear,
+            analytics_cache_stats,
             analytics_action,
             adly_chat,
             trends_query,
