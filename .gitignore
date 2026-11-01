@@ -6,3 +6,6 @@ src-tauri/target/
 __pycache__/
 .vite/
 .playwright-mcp/
+
+# Op Linux gegenereerd door tauri-build; alleen op Windows horen deze in de repo
+src-tauri/gen/schemas/linux-schema.json
