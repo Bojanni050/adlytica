@@ -77,6 +77,34 @@ fn error_message(text: &str) -> String {
     }
 }
 
+/// Vandaag (UTC) als `YYYY-MM-DD`. Zonder chrono: de service eist `date_from`
+/// én `date_to`, bijna elke view stuurt alleen `date_from` — dan is "tot nu"
+/// de enige logische vulling. Uur-afwijking rond middernacht (UTC i.p.v.
+/// lokale tijd) is voor analytics-bereiken onbeduidend.
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    // Howard Hinnant's civil_from_days: dagen sinds epoch → (jaar, maand, dag).
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m as u32, d as u32)
+}
+
+fn today_utc() -> String {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64 / 86_400)
+        .unwrap_or(0);
+    let (y, m, d) = civil_from_days(days);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
 pub struct AnalyticsClient {
     http: reqwest::Client,
     base_url: String,
@@ -167,12 +195,14 @@ impl AnalyticsClient {
             }
         }
 
+        let date_to = p.date_to.clone().unwrap_or_else(today_utc);
+        let date_from = p.date_from.clone();
         let body = serde_json::json!({
             "connector": p.connector,
             "account": p.account,
             "fields": fields,
-            "date_from": p.date_from,
-            "date_to": p.date_to,
+            "date_from": date_from,
+            "date_to": date_to,
             "group_by": p.group_by,
             "options": p.options,
             "limit": p.limit,
@@ -241,5 +271,22 @@ impl AnalyticsClient {
             .and_then(|v| v.get("version").and_then(|x| x.as_str()).map(|s| s.to_string()))
             .unwrap_or_else(|| "onbekend".to_string());
         Ok(version)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::civil_from_days;
+
+    #[test]
+    fn civil_from_days_datums() {
+        // epoch: 1970-01-01
+        assert_eq!(civil_from_days(0), (1970, 1, 1));
+        // grens vóór 1970
+        assert_eq!(civil_from_days(-1), (1969, 12, 31));
+        // schrikkeljaar: 2000-02-29 = dag 11_016
+        assert_eq!(civil_from_days(11_016), (2000, 2, 29));
+        // 56 jaar (14 schrikkeljaren) = 20_454 dagen tot 2026-01-01, + 304 tot 2026-11-01
+        assert_eq!(civil_from_days(20_758), (2026, 11, 1));
     }
 }

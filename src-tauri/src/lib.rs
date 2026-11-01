@@ -162,6 +162,7 @@ async fn analytics_login_start(
     base_url: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    oauth::log_step("login-knop: inloggen aangevraagd");
     let base = if base_url.trim().is_empty() {
         state
             .analytics_base_url
@@ -174,6 +175,7 @@ async fn analytics_login_start(
     };
     *state.analytics_base_url.lock().unwrap() = Some(base.clone());
     persist(&state);
+    oauth::log_step("service-URL bewaard in config");
     {
         let mut login = state.login.lock().unwrap();
         login.phase = "pending".into();
@@ -194,8 +196,9 @@ async fn analytics_login_start(
     }
 
     match oauth::open_browser(&url) {
-        Ok(()) => {}
+        Ok(()) => oauth::log_step("browser-opdracht gegeven (rundll32)"),
         Err(e) => {
+            oauth::log_step(&format!("browser-open mislukt: {e}"));
             let mut login = state.login.lock().unwrap();
             login.message = format!("Kon de browser niet openen ({e}) — open de URL hieronder zelf.");
         }

@@ -70,7 +70,7 @@ fn http_client() -> reqwest::Client {
 
 /// Logt een stap naar stderr én naar `<configmap>/login.log`, zodat een mislukte
 /// login op een andere machine te achterhalen is.
-fn log_step(message: &str) {
+pub(crate) fn log_step(message: &str) {
     eprintln!("[login] {message}");
     let Some(dir) = crate::config::config_dir() else {
         return;
