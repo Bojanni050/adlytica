@@ -57,6 +57,38 @@ fn challenge_for(verifier: &str) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest)
 }
 
+/// HTTP-client met expliciete time-outs. Zonder time-out blijft een hangende
+/// verbinding eeuwig wachten: dan opent er geen browser en verschijnt er ook geen
+/// foutmelding, wat precies op een bevroren login lijkt.
+fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap_or_default()
+}
+
+/// Logt een stap naar stderr én naar `<configmap>/login.log`, zodat een mislukte
+/// login op een andere machine te achterhalen is.
+fn log_step(message: &str) {
+    eprintln!("[login] {message}");
+    let Some(dir) = crate::config::config_dir() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("login.log"))
+    {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(file, "{stamp} {message}");
+    }
+}
+
 fn encode_query(pairs: &[(&str, &str)]) -> String {
     let mut serializer = url::form_urlencoded::Serializer::new(String::new());
     for (k, v) in pairs {
@@ -104,7 +136,10 @@ fn open_browser(url: &str) -> Result<(), String> {
 
 async fn fetch_metadata(base: &str) -> Result<Metadata, String> {
     let url = format!("{base}/.well-known/oauth-authorization-server");
-    let resp = reqwest::get(&url)
+    log_step(&format!("metadata ophalen van {url}"));
+    let resp = http_client()
+        .get(&url)
+        .send()
         .await
         .map_err(|e| format!("geen verbinding met {url}: {e}"))?;
     if !resp.status().is_success() {
@@ -123,7 +158,8 @@ async fn register_client(base: &str, redirect_uri: &str) -> Result<String, Strin
         "response_types": ["code"],
         "token_endpoint_auth_method": "none",
     });
-    let resp = reqwest::Client::new()
+    log_step(&format!("client registreren bij {base}/register (redirect {redirect_uri})"));
+    let resp = http_client()
         .post(format!("{base}/register"))
         .json(&body)
         .send()
@@ -208,7 +244,8 @@ fn wait_for_callback(listener: TcpListener, timeout: Duration) -> Result<(String
 }
 
 async fn post_form(url: &str, pairs: &[(&str, &str)]) -> Result<TokenResponse, String> {
-    let resp = reqwest::Client::new()
+    log_step(&format!("token uitwisselen bij {url}"));
+    let resp = http_client()
         .post(url)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(encode_query(pairs))
@@ -234,6 +271,7 @@ pub async fn login<F: FnOnce(&str)>(base_url: &str, timeout: Duration, on_url: F
         return Err("Vul eerst de service-URL in bij Instellingen.".into());
     }
 
+    log_step(&format!("login gestart tegen {base}"));
     let listener = TcpListener::bind("127.0.0.1:0")
         .map_err(|e| format!("kon geen lokale callback-poort openen: {e}"))?;
     let port = listener
@@ -263,9 +301,11 @@ pub async fn login<F: FnOnce(&str)>(base_url: &str, timeout: Duration, on_url: F
     );
 
     on_url(&auth_url);
-    if let Err(e) = open_browser(&auth_url) {
+    log_step(&format!("authorize-URL klaar ({redirect_uri}); browser openen"));
+    match open_browser(&auth_url) {
         // Niet fataal: de URL staat in de app, de callback-listener blijft luisteren.
-        eprintln!("browser openen mislukte: {e}");
+        Ok(()) => log_step("browser gestart"),
+        Err(e) => log_step(&format!("browser openen mislukte: {e}")),
     }
 
     let wait_result = tokio::task::spawn_blocking(move || wait_for_callback(listener, timeout))
@@ -279,6 +319,7 @@ pub async fn login<F: FnOnce(&str)>(base_url: &str, timeout: Duration, on_url: F
         return Err("de callback hoorde niet bij deze loginpoging (state verschilt)".into());
     }
 
+    log_step("callback ontvangen; code inwisselen");
     let token = post_form(
         &metadata.token_endpoint,
         &[
