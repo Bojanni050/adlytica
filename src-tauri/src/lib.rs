@@ -41,6 +41,7 @@ pub struct AppState {
     pub dataforseo_password: Mutex<Option<String>>,
     pub notifications_enabled: Mutex<bool>,
     pub alerts: Mutex<config::AlertSettings>,
+    pub actions: Mutex<Vec<config::ActionItem>>,
     pub trends: trends::TrendsState,
 }
 
@@ -71,6 +72,7 @@ fn persist(state: &AppState) {
     let dataforseo_password = state.dataforseo_password.lock().unwrap().clone();
     let notifications_enabled = *state.notifications_enabled.lock().unwrap();
     let alerts = state.alerts.lock().unwrap().clone();
+    let actions = state.actions.lock().unwrap().clone();
     let cfg = config::AppConfig {
         analytics_base_url,
         analytics_access_token: present(creds.access_token.clone()),
@@ -90,6 +92,7 @@ fn persist(state: &AppState) {
         dataforseo_password,
         notifications_enabled,
         alerts,
+        actions,
     };
     if let Err(e) = config::save(&cfg) {
         eprintln!("Config niet opgeslagen: {e}");
@@ -337,6 +340,25 @@ async fn set_alert_settings(
 ) -> Result<config::AlertSettings, String> {
     let clean = settings.sanitized();
     *state.alerts.lock().unwrap() = clean.clone();
+    persist(&state);
+    Ok(clean)
+}
+
+/// De takenlijst van het actiecentrum, in opslagvolgorde.
+#[tauri::command]
+fn get_actions(state: State<'_, AppState>) -> Vec<config::ActionItem> {
+    state.actions.lock().unwrap().clone()
+}
+
+/// Vervangt de takenlijst. De backend schoont op (lengtes, statussen, maximum
+/// aantal taken) en geeft terug wat er echt is opgeslagen.
+#[tauri::command]
+fn set_actions(
+    actions: Vec<config::ActionItem>,
+    state: State<'_, AppState>,
+) -> Result<Vec<config::ActionItem>, String> {
+    let clean = config::sanitized_actions(actions);
+    *state.actions.lock().unwrap() = clean.clone();
     persist(&state);
     Ok(clean)
 }
@@ -744,6 +766,7 @@ async fn dataforseo_gap(
                 dataforseo_password: Mutex::new(cfg.dataforseo_password),
                 notifications_enabled: Mutex::new(cfg.notifications_enabled),
                 alerts: Mutex::new(cfg.alerts.clone().sanitized()),
+                actions: Mutex::new(config::sanitized_actions(cfg.actions.clone())),
                 trends: trends::TrendsState {
                     sidecar: Mutex::new(None),
                     python: Mutex::new(cfg.python_path),
@@ -779,6 +802,8 @@ async fn dataforseo_gap(
             get_notifications,
             set_notifications,
             set_alert_settings,
+            get_actions,
+            set_actions,
             notify_now,
             test_notification,
             set_dataforseo,

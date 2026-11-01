@@ -6,7 +6,8 @@ import {
 import { analyticsQuery, num, fmt, dateNDaysAgo, QueryParams, Row, notifyNow, AlertSettings, DEFAULT_ALERT_SETTINGS } from "../lib/api";
 import { exportPdf } from "../lib/pdf";
 import { shiftDate, useDateRange } from "../lib/dateRange";
-import { buildDashboardAlerts } from "../lib/alerts";
+import { buildDashboardAlerts, DashboardAlert } from "../lib/alerts";
+import { createActionFromAlert } from "../lib/actions";
 import {
   DashboardLayout, defaultLayout, loadDashboardLayout, moveVisibleWidget,
   resetDashboardLayout, reorderWidgets, saveDashboardLayout,
@@ -971,6 +972,18 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
     onAlerts?.(alerts.length);
   }, [alerts, onAlerts]);
 
+  // Status per alert na "Maak taak": toegevoegd, bestond al, of mislukt.
+  const [taskState, setTaskState] = useState<Record<string, "toegevoegd" | "bestond" | "fout">>({});
+
+  async function makeTask(alert: DashboardAlert) {
+    try {
+      const { added } = await createActionFromAlert(alert);
+      setTaskState((current) => ({ ...current, [alert.id]: added ? "toegevoegd" : "bestond" }));
+    } catch {
+      setTaskState((current) => ({ ...current, [alert.id]: "fout" }));
+    }
+  }
+
   // Eén systeemmelding per dag, alleen als de gebruiker dat in Instellingen
   // aanzet. Losse localStorage-sleutel van de anomalie-melding hierboven.
   useEffect(() => {
@@ -1229,15 +1242,32 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
                   <p className="hint">{alert.detail}</p>
                   <p className="alert-action">{alert.impact} {alert.action}</p>
                 </div>
-                {alert.view && onNavigate && (
+                <div className="alert-controls">
                   <button
                     type="button"
                     className="ghost alert-open"
-                    onClick={() => alert.view && onNavigate(alert.view)}
+                    onClick={() => makeTask(alert)}
+                    disabled={taskState[alert.id] === "toegevoegd"}
+                    title="Zet dit signaal als taak in het actiecentrum"
                   >
-                    {alert.viewLabel ?? "Openen"}
+                    {taskState[alert.id] === "toegevoegd"
+                      ? "Taak aangemaakt ✓"
+                      : taskState[alert.id] === "bestond"
+                        ? "Staat al in Acties"
+                        : taskState[alert.id] === "fout"
+                          ? "Mislukt"
+                          : "Maak taak"}
                   </button>
-                )}
+                  {alert.view && onNavigate && (
+                    <button
+                      type="button"
+                      className="ghost alert-open"
+                      onClick={() => alert.view && onNavigate(alert.view)}
+                    >
+                      {alert.viewLabel ?? "Openen"}
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

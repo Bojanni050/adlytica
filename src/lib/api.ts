@@ -171,6 +171,31 @@ export async function setAlertSettings(settings: AlertSettings): Promise<AlertSe
   return invoke<AlertSettings>("set_alert_settings", { settings });
 }
 
+export type ActionStatus = "nieuw" | "gezien" | "uitgevoerd" | "genegeerd";
+
+export const ACTION_STATUSES: ActionStatus[] = ["nieuw", "gezien", "uitgevoerd", "genegeerd"];
+
+/** Eén taak uit het actiecentrum; de backend bewaart ze in config.json. */
+export interface ActionItem {
+  id: string;
+  title: string;
+  detail: string;
+  status: ActionStatus;
+  source: "alert" | "handmatig";
+  alert_key: string | null;
+  view: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getActions(): Promise<ActionItem[]> {
+  return invoke<ActionItem[]>("get_actions");
+}
+
+export async function setActions(actions: ActionItem[]): Promise<ActionItem[]> {
+  return invoke<ActionItem[]>("set_actions", { actions });
+}
+
 export async function getSettingsStatus(): Promise<SettingsStatus> {
   return invoke("get_settings_status");
 }

@@ -259,6 +259,56 @@ button.danger { background: var(--danger); color: #1b1206; border: none; border-
 .alert-body p { margin: 2px 0; }
 .alert-action { color: var(--text); font-size: 12px; }
 .alert-open { flex: none; align-self: center; }
+.alert-controls { flex: none; display: flex; flex-direction: column; gap: 6px; }
+
+/* Actiecentrum */
+.action-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 12px; }
+.chip {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip:hover { border-color: var(--accent); }
+.chip.active { border-color: var(--accent); color: var(--text); background: rgba(245, 158, 11, 0.12); }
+.chip-count {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 11px;
+  min-width: 18px;
+  text-align: center;
+}
+.chip.active .chip-count { background: rgba(245, 158, 11, 0.25); color: var(--accent); }
+
+.action-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.action-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.action-item.gezien { border-left-color: var(--muted); }
+.action-item.uitgevoerd { border-left-color: var(--accent-2); }
+.action-item.genegeerd { border-left-color: var(--border); opacity: 0.7; }
+.action-item.genegeerd .action-title { text-decoration: line-through; }
+.action-main { flex: 1; min-width: 0; }
+.action-title { font-weight: 600; }
+.action-item p { margin: 4px 0; }
+.action-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.action-controls { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 320px; }
+.action-status { font-size: 12px; padding: 4px 10px; }
+.action-remove { font-size: 12px; padding: 4px 8px; }
 
 .form-row { display: flex; gap: 12px; margin-bottom: 12px; }.form-row > div { flex: 1; }
 label.field { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }

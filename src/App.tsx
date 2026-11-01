@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { getAccounts, getBrand, getSettingsStatus, AlertSettings, DEFAULT_ALERT_SETTINGS, BrandConfig } from "./lib/api";
+import { ACTIONS_EVENT, countOpenActions, loadActions } from "./lib/actions";
 import { DEFAULT_ACCOUNTS } from "./lib/constants";
 import { WHITE_LABEL_ENABLED } from "./lib/features";
 import CommandPalette from "./components/CommandPalette";
 import AdlyPanel from "./components/AdlyPanel";
 import Dashboard from "./views/Dashboard";
+import Actions from "./views/Actions";
 import KeywordSearch from "./views/KeywordSearch";
 import Rankings from "./views/Rankings";
 import SeoAnalysis from "./views/SeoAnalysis";
@@ -20,10 +22,11 @@ import Competitors from "./views/Competitors";
 import PageSpeed from "./views/PageSpeed";
 import { DateRangeProvider, DateRangeSelector } from "./lib/dateRange";
 
-type ViewId = "dashboard" | "keywords" | "rankings" | "seo" | "insights" | "reports" | "audit" | "speed" | "competitors" | "campaigns" | "searchterms" | "budget" | "trends" | "settings";
+type ViewId = "dashboard" | "actions" | "keywords" | "rankings" | "seo" | "insights" | "reports" | "audit" | "speed" | "competitors" | "campaigns" | "searchterms" | "budget" | "trends" | "settings";
 
 const NAV: { id: ViewId; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▤" },
+  { id: "actions", label: "Acties", icon: "☑" },
   { id: "keywords", label: "Keyword Search", icon: "⌕" },
   { id: "rankings", label: "Posities", icon: "↕" },
   { id: "seo", label: "SEO Analyse", icon: "◈" },
@@ -45,6 +48,7 @@ export default function App() {
   const [brand, setBrandState] = useState<BrandConfig | null>(null);
   const [alertSettings, setAlertSettings] = useState<AlertSettings>(DEFAULT_ALERT_SETTINGS);
   const [alertCount, setAlertCount] = useState(0);
+  const [actionCount, setActionCount] = useState(0);
 
   useEffect(() => {
     if (!WHITE_LABEL_ENABLED) return;
@@ -74,6 +78,25 @@ export default function App() {
       .catch(() => undefined);
   }, []);
 
+  // Openstaande taken voor de badge in de zijbalk; elke wijziging in het
+  // actiecentrum stuurt een event, zodat de teller meteen klopt.
+  useEffect(() => {
+    let cancelled = false;
+    function refresh() {
+      loadActions()
+        .then((list) => {
+          if (!cancelled) setActionCount(countOpenActions(list));
+        })
+        .catch(() => undefined);
+    }
+    refresh();
+    window.addEventListener(ACTIONS_EVENT, refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(ACTIONS_EVENT, refresh);
+    };
+  }, []);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -94,6 +117,7 @@ export default function App() {
         onAlerts={setAlertCount}
       />
     ),
+    actions: <Actions onNavigate={(id) => setView(id as ViewId)} />,
     keywords: <KeywordSearch accounts={accounts} />,
     rankings: <Rankings accounts={accounts} />,
     seo: <SeoAnalysis accounts={accounts} />,
@@ -143,6 +167,11 @@ export default function App() {
               {item.id === "dashboard" && alertSettings.badge && alertCount > 0 && (
                 <span className="nav-badge" title={`${alertCount} alert${alertCount === 1 ? "" : "s"} op het dashboard`}>
                   {alertCount}
+                </span>
+              )}
+              {item.id === "actions" && actionCount > 0 && (
+                <span className="nav-badge" title={`${actionCount} openstaande taak${actionCount === 1 ? "" : "en"}`}>
+                  {actionCount}
                 </span>
               )}
             </button>

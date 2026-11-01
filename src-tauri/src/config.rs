@@ -53,6 +53,9 @@ pub struct AppConfig {
     /// Drempels en schakelaars voor de dashboard-alerts.
     #[serde(default)]
     pub alerts: AlertSettings,
+    /// Taken uit het actiecentrum (dashboard-signalen en handmatige taken).
+    #[serde(default)]
+    pub actions: Vec<ActionItem>,
 }
 
 /// Instelbare drempels voor de drie dashboard-alerts.
@@ -174,11 +177,80 @@ impl AlertSettings {
     }
 }
 
-fn default_mistral_model() -> String {
-    "mistral-small-latest".into()
+/// Eén taak in het actiecentrum. Bewust plat en zonder logica: de frontend
+/// bepaalt wat er in komt, de backend bewaart het netjes en schoont het op.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct ActionItem {
+    /// Uniek binnen de lijst; de frontend genereert hem.
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub detail: String,
+    /// "nieuw", "gezien", "uitgevoerd" of "genegeerd".
+    #[serde(default = "default_action_status")]
+    pub status: String,
+    /// "alert" (uit een dashboardsignaal) of "handmatig".
+    #[serde(default = "default_action_source")]
+    pub source: String,
+    /// Herkenningssleutel van de alert waaruit de taak ontstond.
+    #[serde(default)]
+    pub alert_key: Option<String>,
+    /// View waarnaar de taak verwijst (bijv. "seo").
+    #[serde(default)]
+    pub view: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
 }
 
-fn default_python_path() -> String {
+fn default_action_status() -> String {
+    "nieuw".into()
+}
+
+fn default_action_source() -> String {
+    "handmatig".into()
+}
+
+pub const ACTION_STATUSES: [&str; 4] = ["nieuw", "gezien", "uitgevoerd", "genegeerd"];
+const MAX_ACTIONS: usize = 500;
+
+/// Maakt van willekeurige invoer een bruikbare takenlijst: geen lege titels,
+/// alleen bekende statussen en een harde bovengrens zodat config.json niet groeit
+/// zonder einde. Onbekende statussen vallen terug op "nieuw" in plaats van de
+/// hele taak te laten verdwijnen.
+pub fn sanitized_actions(actions: Vec<ActionItem>) -> Vec<ActionItem> {
+    fn trim_to(value: &str, max: usize) -> String {
+        let trimmed = value.trim();
+        trimmed.chars().take(max).collect()
+    }
+
+    actions
+        .into_iter()
+        .filter_map(|mut action| {
+            action.id = trim_to(&action.id, 64);
+            action.title = trim_to(&action.title, 200);
+            if action.id.is_empty() || action.title.is_empty() {
+                return None;
+            }
+            action.detail = trim_to(&action.detail, 2000);
+            if !ACTION_STATUSES.contains(&action.status.as_str()) {
+                action.status = "nieuw".into();
+            }
+            action.source = if action.source == "alert" { "alert".into() } else { "handmatig".into() };
+            action.alert_key = action.alert_key.map(|key| trim_to(&key, 200)).filter(|key| !key.is_empty());
+            action.view = action.view.map(|view| trim_to(&view, 40)).filter(|view| !view.is_empty());
+            action.created_at = trim_to(&action.created_at, 40);
+            action.updated_at = trim_to(&action.updated_at, 40);
+            Some(action)
+        })
+        .take(MAX_ACTIONS)
+        .collect()
+}
+
+fn default_mistral_model() -> String {
+    "mistral-small-latest".into()
+}fn default_python_path() -> String {
     "python3".into()
 }
 
@@ -203,6 +275,7 @@ impl Default for AppConfig {
             pagespeed_api_key: None,
             brand: None,
             alerts: AlertSettings::default(),
+            actions: Vec::new(),
         }
     }
 }
@@ -333,5 +406,44 @@ mod tests {
         assert_eq!(opgeschoond.position_drop_high, 4.0);
         assert_eq!(opgeschoond.max_page_ctr_pct, 0.0);
         assert_eq!(opgeschoond.min_page_impressions, 0.0);
+    }
+
+    #[test]
+    fn takenlijst_wordt_opgeschoond() {
+        let opgeschoond = sanitized_actions(vec![
+            ActionItem {
+                id: "a".into(),
+                title: "  Titel  ".into(),
+                detail: "detail".into(),
+                status: "bestaat-niet".into(),
+                source: "alert".into(),
+                alert_key: Some("  clicks-drop|Titel ".into()),
+                view: Some("seo".into()),
+                created_at: "2026-11-01T10:00:00Z".into(),
+                updated_at: "2026-11-01T10:00:00Z".into(),
+            },
+            ActionItem {
+                id: "b".into(),
+                title: "   ".into(),
+                detail: String::new(),
+                status: "nieuw".into(),
+                source: "handmatig".into(),
+                alert_key: None,
+                view: None,
+                created_at: String::new(),
+                updated_at: String::new(),
+            },
+        ]);
+        assert_eq!(opgeschoond.len(), 1, "taak zonder titel hoort te vervallen");
+        assert_eq!(opgeschoond[0].title, "Titel");
+        assert_eq!(opgeschoond[0].status, "nieuw");
+        assert_eq!(opgeschoond[0].alert_key.as_deref(), Some("clicks-drop|Titel"));
+    }
+
+    #[test]
+    fn config_zonder_actions_krijgt_een_lege_lijst() {
+        let text = r#"{"mistral_model":"mistral-small-latest"}"#;
+        let cfg: AppConfig = serde_json::from_str(text).expect("oude config moet leesbaar blijven");
+        assert!(cfg.actions.is_empty());
     }
 }
