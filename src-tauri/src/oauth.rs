@@ -67,17 +67,39 @@ fn encode_query(pairs: &[(&str, &str)]) -> String {
 
 fn open_browser(url: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
-    let (program, args): (&str, Vec<&str>) = ("cmd", vec!["/C", "start", "", url]);
-    #[cfg(target_os = "macos")]
-    let (program, args): (&str, Vec<&str>) = ("open", vec![url]);
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let (program, args): (&str, Vec<&str>) = ("xdg-open", vec![url]);
+    {
+        // `cmd /C start` leest de opdrachtregel opnieuw en ziet de '&' in de
+        // authorize-URL als commando-scheiding; zonder quotes opent er niets
+        // (of een afgekapte URL). De URL moet dus expliciet tussen quotes staan.
+        let quoted = format!("\"{url}\"");
+        if std::process::Command::new("cmd")
+            .args(["/C", "start", "", &quoted])
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+        // explorer.exe opent de standaardbrowser zonder tussenkomst van cmd.
+        return std::process::Command::new("explorer")
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("kon de browser niet openen: {e}"));
+    }
 
-    std::process::Command::new(program)
-        .args(args)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("kon de browser niet openen: {e}"))
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let program = "xdg-open";
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new(program)
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("kon de browser niet openen: {e}"))
+    }
 }
 
 async fn fetch_metadata(base: &str) -> Result<Metadata, String> {
@@ -202,7 +224,11 @@ async fn post_form(url: &str, pairs: &[(&str, &str)]) -> Result<TokenResponse, S
 }
 
 /// Volledige login: registreren, browser openen, code inwisselen voor een token.
-pub async fn login(base_url: &str, timeout: Duration) -> Result<Credentials, String> {
+///
+/// `on_url` krijgt de authorize-URL voordat de browser opengaat, zodat de app hem
+/// kan tonen. Lukt het openen van de browser niet, dan wachten we alsnog op de
+/// callback — de gebruiker kan de URL dan zelf openen.
+pub async fn login<F: FnOnce(&str)>(base_url: &str, timeout: Duration, on_url: F) -> Result<Credentials, String> {
     let base = base_url.trim().trim_end_matches('/').to_string();
     if base.is_empty() {
         return Err("Vul eerst de service-URL in bij Instellingen.".into());
@@ -236,11 +262,19 @@ pub async fn login(base_url: &str, timeout: Duration) -> Result<Credentials, Str
         ])
     );
 
-    open_browser(&auth_url)?;
+    on_url(&auth_url);
+    if let Err(e) = open_browser(&auth_url) {
+        // Niet fataal: de URL staat in de app, de callback-listener blijft luisteren.
+        eprintln!("browser openen mislukte: {e}");
+    }
 
-    let (code, returned_state) = tokio::task::spawn_blocking(move || wait_for_callback(listener, timeout))
+    let wait_result = tokio::task::spawn_blocking(move || wait_for_callback(listener, timeout))
         .await
-        .map_err(|e| format!("callback-taak mislukte: {e}"))??;
+        .map_err(|e| format!("callback-taak mislukte: {e}"))?;
+    let (code, returned_state) = match wait_result {
+        Ok(pair) => pair,
+        Err(e) => return Err(format!("{e}\nOpen deze URL zelf in je browser:\n{auth_url}")),
+    };
     if returned_state != state {
         return Err("de callback hoorde niet bij deze loginpoging (state verschilt)".into());
     }

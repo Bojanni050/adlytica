@@ -11,7 +11,7 @@ mod wordpress;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Emitter, State};
 
 #[derive(Default)]
 pub struct AppState {
@@ -127,7 +127,11 @@ async fn set_analytics_config(
 
 /// Logt in op de databron: DCR + PKCE, browser, loopback-callback.
 #[tauri::command]
-async fn analytics_login(base_url: String, state: State<'_, AppState>) -> Result<String, String> {
+async fn analytics_login(
+    app: tauri::AppHandle,
+    base_url: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
     let base = if base_url.trim().is_empty() {
         state
             .analytics_base_url
@@ -139,7 +143,13 @@ async fn analytics_login(base_url: String, state: State<'_, AppState>) -> Result
         base_url.trim().to_string()
     };
 
-    let creds = oauth::login(&base, std::time::Duration::from_secs(300)).await?;
+    // De authorize-URL gaat meteen naar de UI, zodat je hem ook zelf kunt openen
+    // als de browser niet opent.
+    let url_app = app.clone();
+    let creds = oauth::login(&base, std::time::Duration::from_secs(300), move |url| {
+        let _ = url_app.emit("analytics-login-url", url.to_string());
+    })
+    .await?;
     let message = if creds.refresh_token.is_some() {
         "✓ Ingelogd — de app kan het token nu zelf vernieuwen.".to_string()
     } else {

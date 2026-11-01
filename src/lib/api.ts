@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export interface QueryParams {
   connector: string;
@@ -48,6 +49,14 @@ export async function testAnalytics(): Promise<string> {
  */
 export async function analyticsLogin(baseUrl: string): Promise<string> {
   return invoke<string>("analytics_login", { baseUrl });
+}
+
+/**
+ * Ontvangt de authorize-URL zodra de login begint, zodat je hem ook zelf in een
+ * browser kunt openen als de app dat niet doet. Geeft een functie terug om te stoppen.
+ */
+export async function onLoginUrl(handler: (url: string) => void): Promise<() => void> {
+  return listen<string>("analytics-login-url", (event) => handler(event.payload));
 }
 
 /** Wist de inloggegevens van de databron. */

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
-  setAnalyticsConfig, testAnalytics, analyticsLogin, analyticsLogout,
+  setAnalyticsConfig, testAnalytics, analyticsLogin, analyticsLogout, onLoginUrl,
   setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
   setWordpressConfig, testWordpress, setBrand, BrandConfig,
   getNotifications, setNotifications as saveNotifications, testNotification, setDataForSeo, setPagespeedKey,
@@ -26,6 +26,7 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
   const [token, setToken] = useState("");
   const [testMsg, setTestMsg] = useState<string | null>(null);
   const [loginMsg, setLoginMsg] = useState<string | null>(null);
+  const [loginUrl, setLoginUrl] = useState<string | null>(null);
   const [gscAccount, setGscAccount] = useState(accounts.searchconsole ?? "");
   const [adsAccount, setAdsAccount] = useState(accounts.google_ads ?? "");
   const [ga4Account, setGa4Account] = useState(accounts.googleanalytics4 ?? "");
@@ -48,6 +49,16 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [saved, setSaved] = useState<SettingsStatus | null>(null);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    onLoginUrl(setLoginUrl)
+      .then((stop) => {
+        unlisten = stop;
+      })
+      .catch(() => undefined);
+    return () => unlisten?.();
+  }, []);
 
   useEffect(() => {
     getSettingsStatus().then((st) => {
@@ -122,7 +133,8 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
   }
 
   async function login() {
-    setLoginMsg("Browser geopend — rond de login daar af…");
+    setLoginUrl(null);
+    setLoginMsg("Bezig met inloggen — rond de login in je browser af…");
     try {
       setLoginMsg(await analyticsLogin(baseUrl.trim()));
       setSaved(await getSettingsStatus());
@@ -203,6 +215,13 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
             <span className="hint" style={{ alignSelf: "center" }}>{loginMsg ?? testMsg}</span>
           )}
         </div>
+        {loginUrl && (
+          <p className="hint" style={{ wordBreak: "break-all" }}>
+            Opent je browser niet? Open deze URL dan zelf:
+            <br />
+            <code style={{ userSelect: "all" }}>{loginUrl}</code>
+          </p>
+        )}
         <p className="hint">
           De app opent je browser en vangt de login lokaal op; er komt geen sleutel in de app te staan.
           {saved?.analytics_can_refresh
