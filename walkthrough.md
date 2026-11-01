@@ -159,3 +159,10 @@
 - Findings: de dev-console toonde `:5173/favicon.ico 404`; `index.html` verwees naar geen enkel icoon en er was geen `public/`-map, dus Chrome vroeg standaard om `/favicon.ico`.
 - Conclusions: één SVG met het ◉-merk (amberen ring op donker) plus de bestaande `src-tauri/icons/icon.ico` als fallback, zodat moderne browsers de scherpe SVG pakken en oudere of externe verwijzingen alsnog een icoon krijgen. `theme-color` mee zodat de taakbalk op de donkere achtergrond aansluit.
 - Actions: `public/favicon.svg` en `public/favicon.ico` nieuw; `index.html` met `rel="icon"` (svg), `rel="alternate icon"` (ico) en `theme-color`; `npm run build` groen en beide bestanden in `dist/`; in de browser gecontroleerd: `/favicon.svg` en `/favicon.ico` geven 200; validated.
+
+## 2026-11-01 (Code-review van de login-flow: vier ruis-items gefixt)
+
+- Findings: review van de laatste vijf login-commits vond vier dingen die niets met de logica te maken hadden maar wel kapot of onnodig zwaar: een leeg `trig.txt` in commit "test", een breukeloose zin "de login ronduit daarna vanzelf af" in de inlogkaart, een timeout-mismatch (UI pollt 3 min, backend `oauth::finish` wacht 5 min — inlog na 3,5 min geeft "probeer opnieuw" terwijl de backend nog slaagt en daarna een nieuwe poging concurrent schrijfwerk op `state.login` krijgt) en 606 gecommitte bestanden onder `src-tauri/target/` ondanks een correcte `.gitignore`.
+- Conclusions: `.gitignore` maakt losse bestanden niet los; alleen `git rm --cached` + commit haalt ze uit het verkeer. De poll-iteratie koppelen aan de backend-timeout (300 s) in plaats van eraan voorbij te lopen, met marge (330), is een regelwerk waar geen cachefront voor gebouwd hoeft worden; de reden van het aparte commit verschillende is dat de (onverwijderbare uit gitk-geschiedenis) 74 MB target-map een opzichzelf staand probleem is.
+- Actions: `git rm trig.txt` en `git rm -r --cached src-tauri/target` (commit 0910abd); `src/views/Settings.tsx` — de kopiek-in-kaart-tekst en de poll-loop `180 → 330` incl. meldingstekst "binnen vijf minuten" (commit 5f42f73); `npx tsc --noEmit` schoon; validated.
+
