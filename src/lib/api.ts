@@ -219,6 +219,31 @@ export async function setActions(actions: ActionItem[]): Promise<ActionItem[]> {
   return invoke<ActionItem[]>("set_actions", { actions });
 }
 
+/** Een bevroren rapport: de cijfers zoals ze bij het bewaren waren. */
+export interface ReportSnapshot {
+  id: string;
+  title: string;
+  created_at: string;
+  date_from: string;
+  date_to: string;
+  days: number;
+  kpis: { label: string; value: string }[];
+  sections: { title: string; head: string[]; rows: string[][]; note: string | null }[];
+}
+
+export async function getReportSnapshots(): Promise<ReportSnapshot[]> {
+  return invoke<ReportSnapshot[]>("get_report_snapshots");
+}
+
+/** Bewaart (of vervangt) een snapshot; geeft de opgeschoonde lijst terug. */
+export async function saveReportSnapshot(report: ReportSnapshot): Promise<ReportSnapshot[]> {
+  return invoke<ReportSnapshot[]>("save_report_snapshot", { report });
+}
+
+export async function deleteReportSnapshot(id: string): Promise<ReportSnapshot[]> {
+  return invoke<ReportSnapshot[]>("delete_report_snapshot", { id });
+}
+
 export async function getSettingsStatus(): Promise<SettingsStatus> {
   return invoke("get_settings_status");
 }

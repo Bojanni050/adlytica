@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { analyticsQuery, num, fmt, Row } from "../lib/api";
+import {
+  analyticsQuery, num, fmt, Row, ReportSnapshot,
+  getReportSnapshots, saveReportSnapshot, deleteReportSnapshot,
+} from "../lib/api";
 import { exportPdf, PdfKpi, PdfSection } from "../lib/pdf";
 import { useDateRange } from "../lib/dateRange";
 
@@ -46,6 +49,18 @@ function pathOf(value: unknown): string {
   }
 }
 
+function makeSnapshotId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") return cryptoApi.randomUUID();
+  return `rapport-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function formatMoment(value: string): string {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return "onbekend";
+  return date.toLocaleString("nl-NL", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 export default function Reports({ accounts }: { accounts: Record<string, string> }) {
   const [title, setTitle] = useState(() => localStorage.getItem("adlytica.report.title") ?? "SEO-rapport");
   const { from, to, days } = useDateRange();
@@ -53,6 +68,15 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [snapshots, setSnapshots] = useState<ReportSnapshot[]>([]);
+  const [snapshotMsg, setSnapshotMsg] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ReportSnapshot | null>(null);
+
+  useEffect(() => {
+    getReportSnapshots()
+      .then(setSnapshots)
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("adlytica.report.title", title);
@@ -65,11 +89,12 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
     );
   }
 
-  async function build() {
+  async function build(mode: "pdf" | "snapshot" = "pdf") {
     if (busy) return;
     setBusy(true);
     setError(null);
     setSaved(null);
+    setSnapshotMsg(null);
     try {
       const needQueries = selected.some((id) => ["summary", "queries", "lhf", "ctr"].includes(id));
       const queries =
@@ -248,6 +273,30 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
         throw new Error("Kies minstens één blok voor het rapport.");
       }
 
+      // Snapshot: dezelfde berekening, maar het resultaat gaat als vaste tekst
+      // de opslag in. Later opnieuw openen raakt de databron niet meer aan.
+      if (mode === "snapshot") {
+        const snapshot: ReportSnapshot = {
+          id: makeSnapshotId(),
+          title: title.trim() || "SEO-rapport",
+          created_at: new Date().toISOString(),
+          date_from: from,
+          date_to: to,
+          days,
+          kpis: kpis.map((kpi) => ({ label: kpi.label, value: kpi.value })),
+          sections: sections.map((section) => ({
+            title: section.title,
+            head: section.head,
+            rows: section.rows.map((row) => row.map((cell) => String(cell))),
+            note: section.note ?? null,
+          })),
+        };
+        const stored = await saveReportSnapshot(snapshot);
+        setSnapshots(stored);
+        setSnapshotMsg(`Bewaard: ${snapshot.title} · ${formatMoment(snapshot.created_at)}`);
+        return;
+      }
+
       const path = await exportPdf({
         title: title.trim() || "SEO-rapport",
         subtitle: `Laatste ${days} dagen · ${new Date().toLocaleDateString("nl-NL")}`,
@@ -260,6 +309,37 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
       setError(String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function openSnapshotPdf(snapshot: ReportSnapshot) {
+    try {
+      setError(null);
+      const path = await exportPdf({
+        title: snapshot.title,
+        subtitle: `${snapshot.date_from} t/m ${snapshot.date_to} · bevroren op ${formatMoment(snapshot.created_at)}`,
+        kpis: snapshot.kpis,
+        sections: snapshot.sections.map((section) => ({
+          title: section.title,
+          head: section.head,
+          rows: section.rows,
+          note: section.note ?? undefined,
+        })),
+        filename: `adlytica-rapport-${snapshot.date_to || new Date().toISOString().slice(0, 10)}.pdf`,
+      });
+      setSaved(path);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function removeSnapshot(snapshot: ReportSnapshot) {
+    try {
+      setSnapshots(await deleteReportSnapshot(snapshot.id));
+      if (preview?.id === snapshot.id) setPreview(null);
+      setSnapshotMsg(`Verwijderd: ${snapshot.title}`);
+    } catch (e) {
+      setError(String(e));
     }
   }
 
@@ -297,8 +377,16 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 18 }}>
-          <button className="primary" onClick={build} disabled={busy || selected.length === 0}>
+          <button className="primary" onClick={() => build()} disabled={busy || selected.length === 0}>
             {busy ? "Bezig…" : "Rapport maken (PDF)"}
+          </button>
+          <button
+            className="ghost"
+            onClick={() => build("snapshot")}
+            disabled={busy || selected.length === 0}
+            title="Bewaar de cijfers zoals ze nu zijn; een later rapport verandert ze niet meer"
+          >
+            Bewaar snapshot
           </button>
           <span className="hint" style={{ margin: 0 }}>
             {selected.length} van {BLOCKS.length} blokken · wordt opgeslagen in Downloads
@@ -307,7 +395,85 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
       </div>
 
       {saved && <p className="hint">Opgeslagen: {saved}</p>}
+      {snapshotMsg && <p className="hint">{snapshotMsg}</p>}
       {error && <p className="hint" style={{ color: "var(--danger)" }}>{error}</p>}
+
+      <div className="card">
+        <h3>Bewaarde rapporten</h3>
+        {snapshots.length === 0 ? (
+          <p className="hint">
+            Nog geen snapshots. Met "Bewaar snapshot" leg je de cijfers van dit rapport vast, zodat
+            een klant later precies ziet wat je toen stuurde.
+          </p>
+        ) : (
+          <ul className="snapshot-list">
+            {snapshots.map((snapshot) => (
+              <li key={snapshot.id} className="snapshot-item">
+                <div className="snapshot-main">
+                  <strong>{snapshot.title}</strong>
+                  <span className="hint">
+                    {snapshot.date_from} t/m {snapshot.date_to} · {snapshot.days} dagen
+                  </span>
+                  <span className="hint">
+                    {snapshot.kpis.length} kerncijfers · {snapshot.sections.length} blokken · bewaard{" "}
+                    {formatMoment(snapshot.created_at)}
+                  </span>
+                </div>
+                <div className="snapshot-controls">
+                  <button
+                    className="ghost"
+                    onClick={() => setPreview(preview?.id === snapshot.id ? null : snapshot)}
+                  >
+                    {preview?.id === snapshot.id ? "Sluiten" : "Bekijken"}
+                  </button>
+                  <button className="ghost" onClick={() => openSnapshotPdf(snapshot)}>PDF</button>
+                  <button className="ghost" onClick={() => removeSnapshot(snapshot)}>Verwijderen</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {preview && (
+        <div className="card snapshot-preview">
+          <h3>{preview.title}</h3>
+          <p className="hint">
+            {preview.date_from} t/m {preview.date_to} · bevroren op {formatMoment(preview.created_at)}.
+            Deze cijfers komen niet uit de databron; ze veranderen niet meer.
+          </p>
+          {preview.kpis.length > 0 && (
+            <div className="snapshot-kpis">
+              {preview.kpis.map((kpi) => (
+                <div key={kpi.label} className="snapshot-kpi">
+                  <span>{kpi.label}</span>
+                  <strong>{kpi.value}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+          {preview.sections.map((section) => (
+            <div key={section.title} className="snapshot-section">
+              <h4>{section.title}</h4>
+              <div className="snapshot-table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>{section.head.map((cell, index) => <th key={`${cell}-${index}`}>{cell}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {section.rows.map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {section.note && <p className="hint">{section.note}</p>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -44,6 +44,8 @@ pub struct AppState {
     pub actions: Mutex<Vec<config::ActionItem>>,
     /// Hergebruik van queryresultaten (5 minuten), zie `analytics::QueryCache`.
     pub query_cache: Mutex<analytics::QueryCache>,
+    /// Bevroren rapporten; nieuwste eerst.
+    pub reports: Mutex<Vec<config::ReportSnapshot>>,
     pub trends: trends::TrendsState,
 }
 
@@ -75,6 +77,7 @@ fn persist(state: &AppState) {
     let notifications_enabled = *state.notifications_enabled.lock().unwrap();
     let alerts = state.alerts.lock().unwrap().clone();
     let actions = state.actions.lock().unwrap().clone();
+    let reports = state.reports.lock().unwrap().clone();
     let cfg = config::AppConfig {
         analytics_base_url,
         analytics_access_token: present(creds.access_token.clone()),
@@ -95,6 +98,7 @@ fn persist(state: &AppState) {
         notifications_enabled,
         alerts,
         actions,
+        reports,
     };
     if let Err(e) = config::save(&cfg) {
         eprintln!("Config niet opgeslagen: {e}");
@@ -361,6 +365,44 @@ fn set_actions(
 ) -> Result<Vec<config::ActionItem>, String> {
     let clean = config::sanitized_actions(actions);
     *state.actions.lock().unwrap() = clean.clone();
+    persist(&state);
+    Ok(clean)
+}
+
+#[tauri::command]
+fn get_report_snapshots(state: State<'_, AppState>) -> Vec<config::ReportSnapshot> {
+    state.reports.lock().unwrap().clone()
+}
+
+/// Bewaart een rapport zoals het nu is. Bestaat het id al, dan wordt die
+/// vervangen; het nieuwste rapport staat altijd bovenaan.
+#[tauri::command]
+fn save_report_snapshot(
+    report: config::ReportSnapshot,
+    state: State<'_, AppState>,
+) -> Result<Vec<config::ReportSnapshot>, String> {
+    let clean = {
+        let mut list = state.reports.lock().unwrap();
+        list.retain(|existing| existing.id != report.id);
+        list.insert(0, report);
+        let clean = config::sanitized_reports(list.clone());
+        *list = clean.clone();
+        clean
+    };
+    persist(&state);
+    Ok(clean)
+}
+
+#[tauri::command]
+fn delete_report_snapshot(
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<config::ReportSnapshot>, String> {
+    let clean = {
+        let mut list = state.reports.lock().unwrap();
+        list.retain(|existing| existing.id != id);
+        list.clone()
+    };
     persist(&state);
     Ok(clean)
 }
@@ -790,6 +832,7 @@ async fn dataforseo_gap(
                 notifications_enabled: Mutex::new(cfg.notifications_enabled),
                 alerts: Mutex::new(cfg.alerts.clone().sanitized()),
                 actions: Mutex::new(config::sanitized_actions(cfg.actions.clone())),
+                reports: Mutex::new(config::sanitized_reports(cfg.reports.clone())),
                 query_cache: Mutex::new(analytics::QueryCache::default()),
                 trends: trends::TrendsState {
                     sidecar: Mutex::new(None),
@@ -830,6 +873,9 @@ async fn dataforseo_gap(
             set_alert_settings,
             get_actions,
             set_actions,
+            get_report_snapshots,
+            save_report_snapshot,
+            delete_report_snapshot,
             notify_now,
             test_notification,
             set_dataforseo,

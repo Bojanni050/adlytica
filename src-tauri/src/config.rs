@@ -56,6 +56,9 @@ pub struct AppConfig {
     /// Taken uit het actiecentrum (dashboard-signalen en handmatige taken).
     #[serde(default)]
     pub actions: Vec<ActionItem>,
+    /// Bevroren rapporten: de cijfers zoals ze op het moment van bewaren waren.
+    #[serde(default)]
+    pub reports: Vec<ReportSnapshot>,
 }
 
 /// Instelbare drempels voor de drie dashboard-alerts.
@@ -248,9 +251,120 @@ pub fn sanitized_actions(actions: Vec<ActionItem>) -> Vec<ActionItem> {
         .collect()
 }
 
+/// Eén bevroren rapport. De waarden staan als tekst in de snapshot, precies
+/// zoals ze in de PDF belandden: een later bijgewerkte databron mag een
+/// verstuurd rapport niet meer veranderen.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct ReportSnapshot {
+    /// Uniek binnen de lijst; de frontend genereert hem.
+    pub id: String,
+    pub title: String,
+    /// Moment van bewaren (ISO-8601).
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub date_from: String,
+    #[serde(default)]
+    pub date_to: String,
+    /// Lengte van de periode in dagen, voor "laatste 90 dagen" in de kop.
+    #[serde(default)]
+    pub days: u32,
+    #[serde(default)]
+    pub kpis: Vec<SnapshotKpi>,
+    #[serde(default)]
+    pub sections: Vec<SnapshotSection>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct SnapshotKpi {
+    pub label: String,
+    pub value: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct SnapshotSection {
+    pub title: String,
+    #[serde(default)]
+    pub head: Vec<String>,
+    #[serde(default)]
+    pub rows: Vec<Vec<String>>,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+const MAX_REPORTS: usize = 100;
+const MAX_SNAPSHOT_ROWS: usize = 500;
+
+/// Houdt snapshots klein en voorspelbaar. Een rapport zonder titel of zonder
+/// inhoud verdwijnt; alles wat te lang is wordt afgekapt in plaats van de
+/// hele snapshot te weigeren.
+pub fn sanitized_reports(reports: Vec<ReportSnapshot>) -> Vec<ReportSnapshot> {
+    fn trim_to(value: &str, max: usize) -> String {
+        value.trim().chars().take(max).collect()
+    }
+    fn trim_cells(cells: Vec<String>, max_cells: usize) -> Vec<String> {
+        cells.into_iter().take(max_cells).map(|cell| trim_to(&cell, 200)).collect()
+    }
+
+    reports
+        .into_iter()
+        .filter_map(|mut report| {
+            report.id = trim_to(&report.id, 64);
+            report.title = trim_to(&report.title, 200);
+            if report.id.is_empty() || report.title.is_empty() {
+                return None;
+            }
+            report.created_at = trim_to(&report.created_at, 40);
+            report.date_from = trim_to(&report.date_from, 20);
+            report.date_to = trim_to(&report.date_to, 20);
+            report.days = report.days.min(36_500);
+
+            report.kpis = report
+                .kpis
+                .into_iter()
+                .take(20)
+                .map(|kpi| SnapshotKpi {
+                    label: trim_to(&kpi.label, 80),
+                    value: trim_to(&kpi.value, 80),
+                })
+                .collect();
+
+            report.sections = report
+                .sections
+                .into_iter()
+                .filter_map(|section| {
+                    let title = trim_to(&section.title, 120);
+                    if title.is_empty() {
+                        return None;
+                    }
+                    Some(SnapshotSection {
+                        title,
+                        head: section.head.into_iter().take(12).map(|cell| trim_to(&cell, 60)).collect(),
+                        rows: section
+                            .rows
+                            .into_iter()
+                            .take(MAX_SNAPSHOT_ROWS)
+                            .map(|row| trim_cells(row, 12))
+                            .collect(),
+                        note: section.note.map(|note| trim_to(&note, 500)).filter(|note| !note.is_empty()),
+                    })
+                })
+                .collect();
+
+            if report.kpis.is_empty() && report.sections.is_empty() {
+                return None;
+            }
+            Some(report)
+        })
+        .take(MAX_REPORTS)
+        .collect()
+}
+
 fn default_mistral_model() -> String {
     "mistral-small-latest".into()
-}fn default_python_path() -> String {
+}
+
+fn default_python_path() -> String {
     "python3".into()
 }
 
@@ -276,6 +390,7 @@ impl Default for AppConfig {
             brand: None,
             alerts: AlertSettings::default(),
             actions: Vec::new(),
+            reports: Vec::new(),
         }
     }
 }
@@ -445,5 +560,49 @@ mod tests {
         let text = r#"{"mistral_model":"mistral-small-latest"}"#;
         let cfg: AppConfig = serde_json::from_str(text).expect("oude config moet leesbaar blijven");
         assert!(cfg.actions.is_empty());
+        assert!(cfg.reports.is_empty());
+    }
+
+    #[test]
+    fn snapshots_worden_opgeschoond() {
+        let opgeschoond = sanitized_reports(vec![
+            ReportSnapshot {
+                id: "r1".into(),
+                title: "  SEO-rapport  ".into(),
+                created_at: "2026-11-02T09:00:00Z".into(),
+                date_from: "2026-08-05".into(),
+                date_to: "2026-11-02".into(),
+                days: 90,
+                kpis: vec![SnapshotKpi { label: "Klikken".into(), value: "1.234".into() }],
+                sections: vec![
+                    SnapshotSection {
+                        title: "Top pagina's".into(),
+                        head: vec!["Pagina".into(), "Klikken".into()],
+                        rows: vec![vec!["/zwembaden".into(), "120".into()]],
+                        note: None,
+                    },
+                    SnapshotSection {
+                        title: "   ".into(),
+                        head: Vec::new(),
+                        rows: Vec::new(),
+                        note: None,
+                    },
+                ],
+            },
+            ReportSnapshot {
+                id: "r2".into(),
+                title: "Leeg rapport".into(),
+                created_at: String::new(),
+                date_from: String::new(),
+                date_to: String::new(),
+                days: 0,
+                kpis: Vec::new(),
+                sections: Vec::new(),
+            },
+        ]);
+        assert_eq!(opgeschoond.len(), 1, "rapport zonder inhoud hoort te vervallen");
+        assert_eq!(opgeschoond[0].title, "SEO-rapport");
+        assert_eq!(opgeschoond[0].sections.len(), 1, "sectie zonder titel vervalt");
+        assert_eq!(opgeschoond[0].sections[0].rows[0][0], "/zwembaden");
     }
 }
