@@ -254,6 +254,16 @@ export async function savePdf(filename: string, bytes: number[]): Promise<string
   return invoke<string>("save_pdf", { filename, bytes });
 }
 
+/** Opent een opgeslagen bestand (bijv. een PDF) met de standaardapp van het besturingssysteem. */
+export async function openPath(path: string): Promise<void> {
+  await invoke<void>("open_path", { path });
+}
+
+/** Opent de map van het bestand in de Verkenner met het bestand geselecteerd. */
+export async function revealPath(path: string): Promise<void> {
+  await invoke<void>("reveal_path", { path });
+}
+
 export interface AuditIssue {
   code: string;
   severity: "error" | "warning";

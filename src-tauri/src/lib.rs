@@ -575,6 +575,48 @@ async fn save_pdf(filename: String, bytes: Vec<u8>) -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Opent een bestand met de standaardapp (rimpel: rundll32 belt ShellExecute —
+/// geen cmd, want die verprutst paden en URL's, zie open_browser in oauth.rs).
+#[tauri::command]
+async fn open_path(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        return std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", path.as_str()])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Kon het bestand niet openen: {e}"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        Err("Alleen op Windows een standaardapp; hier is geen opener geïnstalleerd.".into())
+    }
+}
+
+/// Toont een bestand in de Verkenner (map openen met het bestand geselecteerd).
+/// `explorer /select` parseert zijn opdrachtregel zelf, dus het pad moet letterlijk
+/// (raw_arg) met komma en de eigen aanhalingstekens worden doorgegeven.
+#[tauri::command]
+async fn reveal_path(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        return std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{path}\""))
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Kon de map niet openen: {e}"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        Err("Alleen op Windows met de Verkenner; hier is geen verkenner geïnstalleerd.".into())
+    }
+}
+
 fn show_notification(app: &tauri::AppHandle, title: &str, body: &str) -> Result<(), String> {    use tauri_plugin_notification::NotificationExt;
     app.notification()
         .builder()
@@ -719,7 +761,9 @@ async fn dataforseo_gap(
             run_audit,
             pagespeed,
             set_pagespeed_key,
-            save_pdf
+            save_pdf,
+            open_path,
+            reveal_path
         ])
         .run(tauri::generate_context!())
         .expect("Adlytica kon niet starten");

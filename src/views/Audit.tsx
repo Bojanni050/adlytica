@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  runAudit, analyticsQuery, dateNDaysAgo, AuditPage, AuditResult, Row,
+  runAudit, analyticsQuery, dateNDaysAgo, AuditPage, AuditResult, Row, openPath, revealPath,
 } from "../lib/api";
 import { exportPdf } from "../lib/pdf";
 
@@ -94,6 +94,7 @@ export default function Audit({ accounts }: { accounts: Record<string, string> }
   const [open, setOpen] = useState<string | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfMsg, setPdfMsg] = useState<string | null>(null);
+  const [pdfPath, setPdfPath] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem("adlytica.audit.limit", String(limit));
@@ -251,6 +252,7 @@ export default function Audit({ accounts }: { accounts: Record<string, string> }
         ],
         filename: `adlytica-audit-${host}-${stamp}.pdf`,
       });
+      setPdfPath(path);
       setPdfMsg(`Opgeslagen: ${path}`);
     } catch (e) {
       setError(String(e));
@@ -302,7 +304,21 @@ export default function Audit({ accounts }: { accounts: Record<string, string> }
           De crawler haalt de pagina's op. Bij 100 pagina's duurt dit ongeveer een halve minuut.
         </p>
       )}
-      {pdfMsg && <p className="hint">{pdfMsg}</p>}
+      {pdfMsg && (
+        <p className="hint">
+          {pdfMsg}{" "}
+          {pdfPath && (
+            <>
+              <button className="ghost" onClick={() => openPath(pdfPath).catch((e) => setError(String(e)))}>
+                PDF openen
+              </button>{" "}
+              <button className="ghost" onClick={() => revealPath(pdfPath).catch((e) => setError(String(e)))}>
+                Map openen
+              </button>
+            </>
+          )}
+        </p>
+      )}
       {error && <p className="hint" style={{ color: "var(--danger)" }}>{error}</p>}
 
       {!result && !busy && (
