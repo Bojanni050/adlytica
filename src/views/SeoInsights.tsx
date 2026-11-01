@@ -116,10 +116,10 @@ export default function SeoInsights({ accounts }: Props) {
           ? windsorQuery({
               connector: "googleanalytics4",
               account: accounts.googleanalytics4,
-              fields: ["session_source", "sessions"],
+              fields: ["source", "sessions"],
               date_from: dateNDaysAgo(DAYS),
               date_to: dateNDaysAgo(1),
-              group_by: ["session_source"],
+              group_by: ["source"],
               limit: 200,
             })
           : Promise.resolve([] as Row[]),
@@ -136,7 +136,7 @@ export default function SeoInsights({ accounts }: Props) {
       setSources(
         unwrap(sourceRows)
           .map((row) => ({
-            name: String(row.session_source ?? "onbekend"),
+            name: String(row.source ?? "onbekend"),
             sessions: num(row.sessions),
           }))
           .filter((row) => row.sessions > 0)
