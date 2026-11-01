@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { windsorQuery, num, fmt, Row } from "../lib/api";
+import { analyticsQuery, num, fmt, Row } from "../lib/api";
 import { exportPdf } from "../lib/pdf";
 
 interface Props { accounts: Record<string, string>; }
@@ -68,7 +68,7 @@ export default function Budget({ accounts }: Props) {
       const iso = (d: Date) =>
         `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       try {
-        const data = await windsorQuery({
+        const data = await analyticsQuery({
           connector: "google_ads",
           account: accounts.google_ads,
           fields: [

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { windsorQuery, num, fmt, dateNDaysAgo, Row, adlyChat } from "../lib/api";
+import { analyticsQuery, num, fmt, dateNDaysAgo, Row, adlyChat } from "../lib/api";
 import { exportPdf } from "../lib/pdf";
 
 interface Props { accounts: Record<string, string>; }
@@ -90,7 +90,7 @@ export default function KeywordSearch({ accounts }: Props) {
     setPositions({});
     try {
       if (mode === "gsc") {
-        const data = await windsorQuery({
+        const data = await analyticsQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["query", "clicks", "impressions", "ctr", "position"],
           date_from: dateNDaysAgo(89), group_by: ["query"], limit: 5000,
@@ -109,14 +109,14 @@ export default function KeywordSearch({ accounts }: Props) {
           keyword_plan_network: "GOOGLE_SEARCH",
         };
         if (pageUrl.trim() !== "") options.page_url = pageUrl.trim();
-        const planner = windsorQuery({
+        const planner = analyticsQuery({
           connector: "google_ads", account: accounts.google_ads,
           fields: ["keyword", "avg_monthly_searches", "competition_index"],
           options, limit: 500,
         });
         // De gratis gap: welke ideeën je al rankt (en waar) volgens Search Console.
         const own = accounts.searchconsole
-          ? windsorQuery({
+          ? analyticsQuery({
               connector: "searchconsole", account: accounts.searchconsole,
               fields: ["query", "clicks", "impressions", "position"],
               date_from: dateNDaysAgo(89), group_by: ["query"], limit: 5000,

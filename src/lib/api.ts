@@ -13,25 +13,46 @@ export interface QueryParams {
 
 export type Row = Record<string, unknown>;
 
-export async function windsorQuery(params: QueryParams): Promise<Row[]> {
-  const result = await invoke<{ rows: Row[] }>("windsor_query", { params });
+/** Leest bij de self-hosted analytics-service (GA4, Search Console, Google Ads). */
+export async function analyticsQuery(params: QueryParams): Promise<Row[]> {
+  const result = await invoke<{ rows: Row[] }>("analytics_query", { params });
   return result.rows ?? [];
 }
 
-export async function windsorAction(
+export async function analyticsAction(
   connector: string,
   account: string,
   action: string,
   params?: Record<string, unknown>
 ): Promise<unknown> {
-  return invoke("windsor_action", { connector, account, action, params: params ?? {} });
+  return invoke("analytics_action", { connector, account, action, params: params ?? {} });
 }
 
-export async function setWindsorKey(
-  key: string,
+/** Bewaart de databron (service-URL + token) en de account-ID's. */
+export async function setAnalyticsConfig(
+  baseUrl: string,
+  token: string,
   accounts: Record<string, string>
 ): Promise<void> {
-  return invoke("set_windsor_key", { key, accounts });
+  return invoke("set_analytics_config", { baseUrl, token, accounts });
+}
+
+/** Test de databron: GET /health op de ingestelde service-URL. */
+export async function testAnalytics(): Promise<string> {
+  return invoke<string>("test_analytics");
+}
+
+/**
+ * Logt in op de databron: de app registreert zich bij de service (DCR), opent je
+ * browser voor de Google-login en vangt de code op een lokale poort op.
+ */
+export async function analyticsLogin(baseUrl: string): Promise<string> {
+  return invoke<string>("analytics_login", { baseUrl });
+}
+
+/** Wist de inloggegevens van de databron. */
+export async function analyticsLogout(): Promise<void> {
+  return invoke("analytics_logout");
 }
 
 export async function getAccounts(): Promise<Record<string, string>> {
@@ -79,7 +100,10 @@ export async function recordRankPoints(
 }
 
 export interface SettingsStatus {
-  windsor_key_set: boolean;
+  analytics_base_url: string | null;
+  analytics_token_set: boolean;
+  /** True als er een refresh-token is: de app kan het token dan zelf vernieuwen. */
+  analytics_can_refresh: boolean;
   mistral_key_set: boolean;
   mistral_model: string;
   accounts: Record<string, string>;

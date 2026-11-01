@@ -6,8 +6,18 @@ use std::path::PathBuf;
 pub struct AppConfig {
     // Elk veld is `default`, zodat een bestaand config.json zonder nieuw veld
     // niet de hele configuratie (inclusief API-keys) op default zet.
+    /// Basis-URL van de self-hosted analytics-service (GA4, Search Console, Ads).
     #[serde(default)]
-    pub windsor_api_key: Option<String>,
+    pub analytics_base_url: Option<String>,
+    /// Bearer-token uit de Google-login van die service.
+    #[serde(default)]
+    pub analytics_access_token: Option<String>,
+    /// Refresh-token, zodat de app na het verlopen van het access-token zelf kan verversen.
+    #[serde(default)]
+    pub analytics_refresh_token: Option<String>,
+    /// Client-id uit de dynamische registratie (DCR) bij de service.
+    #[serde(default)]
+    pub analytics_client_id: Option<String>,
     #[serde(default)]
     pub mistral_api_key: Option<String>,
     #[serde(default = "default_mistral_model")]
@@ -53,7 +63,10 @@ fn default_python_path() -> String {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            windsor_api_key: None,
+            analytics_base_url: None,
+            analytics_access_token: None,
+            analytics_refresh_token: None,
+            analytics_client_id: None,
             mistral_api_key: None,
             mistral_model: default_mistral_model(),
             accounts: HashMap::new(),
@@ -123,14 +136,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_zonder_layout_blijft_geldig() {
-        // Bestaand config.json van vóór het dashboardlayout-veld mag niet op default vallen,
-        // anders raken API-keys en accounts kwijt.
+    fn config_van_voor_de_databronwissel_blijft_geldig() {
+        // Een bestaand config.json met het oude windsor_api_key-veld mag niet op default
+        // vallen, anders raken accounts en andere sleutels kwijt. Het onbekende veld
+        // wordt genegeerd.
         let text = r#"{"windsor_api_key":"w","mistral_api_key":"m","mistral_model":"mistral-small-latest","accounts":{"searchconsole":"acc"},"python_path":"python3"}"#;
         let cfg: AppConfig = serde_json::from_str(text).expect("bestaande config moet leesbaar blijven");
-        assert_eq!(cfg.windsor_api_key.as_deref(), Some("w"));
+        assert_eq!(cfg.mistral_api_key.as_deref(), Some("m"));
+        assert!(cfg.analytics_access_token.is_none());
         assert_eq!(cfg.accounts.get("searchconsole").map(String::as_str), Some("acc"));
         assert!(cfg.dashboard_layout.is_none());
+    }
+
+    #[test]
+    fn databron_instellingen_blijven_bewaard() {
+        let cfg = AppConfig {
+            analytics_base_url: Some("https://analytics.studiovanderheide.nl".into()),
+            analytics_access_token: Some("tok".into()),
+            analytics_refresh_token: Some("refresh".into()),
+            analytics_client_id: Some("client".into()),
+            ..AppConfig::default()
+        };
+        let back: AppConfig = serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(
+            back.analytics_base_url.as_deref(),
+            Some("https://analytics.studiovanderheide.nl")
+        );
+        assert_eq!(back.analytics_access_token.as_deref(), Some("tok"));
+        assert_eq!(back.analytics_refresh_token.as_deref(), Some("refresh"));
+        assert_eq!(back.analytics_client_id.as_deref(), Some("client"));
     }
 
     #[test]
