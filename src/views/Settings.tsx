@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
-  setAnalyticsConfig, testAnalytics, setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
+  setAnalyticsConfig, testAnalytics, analyticsLogin, analyticsLogout,
+  setPythonPath, setMistralConfig, getSettingsStatus, SettingsStatus,
   setWordpressConfig, testWordpress, setBrand, BrandConfig,
   getNotifications, setNotifications as saveNotifications, testNotification, setDataForSeo, setPagespeedKey,
 } from "../lib/api";
@@ -24,6 +25,7 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
   const [baseUrl, setBaseUrl] = useState("");
   const [token, setToken] = useState("");
   const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [loginMsg, setLoginMsg] = useState<string | null>(null);
   const [gscAccount, setGscAccount] = useState(accounts.searchconsole ?? "");
   const [adsAccount, setAdsAccount] = useState(accounts.google_ads ?? "");
   const [ga4Account, setGa4Account] = useState(accounts.googleanalytics4 ?? "");
@@ -119,6 +121,26 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
     reader.readAsDataURL(file);
   }
 
+  async function login() {
+    setLoginMsg("Browser geopend — rond de login daar af…");
+    try {
+      setLoginMsg(await analyticsLogin(baseUrl.trim()));
+      setSaved(await getSettingsStatus());
+    } catch (e) {
+      setLoginMsg(`✗ ${e}`);
+    }
+  }
+
+  async function logout() {
+    try {
+      await analyticsLogout();
+      setLoginMsg("Uitgelogd.");
+      setSaved(await getSettingsStatus());
+    } catch (e) {
+      setLoginMsg(`✗ ${e}`);
+    }
+  }
+
   async function testDataSource() {
     setTestMsg("Verbinden…");
     try {
@@ -170,19 +192,37 @@ export default function Settings({ accounts, onAccounts, brand, onBrand }: Props
           </div>
         </div>
         <div className="form-row">
+          <button className="ghost" type="button" onClick={login}>
+            {saved?.analytics_token_set ? "Opnieuw inloggen met Google" : "Inloggen met Google"}
+          </button>
+          {saved?.analytics_token_set ? (
+            <button className="ghost" type="button" onClick={logout}>Uitloggen</button>
+          ) : null}
+          <button className="ghost" type="button" onClick={testDataSource}>Verbinding testen</button>
+          {(loginMsg || testMsg) && (
+            <span className="hint" style={{ alignSelf: "center" }}>{loginMsg ?? testMsg}</span>
+          )}
+        </div>
+        <p className="hint">
+          De app opent je browser en vangt de login lokaal op; er komt geen sleutel in de app te staan.
+          {saved?.analytics_can_refresh
+            ? " Het token wordt daarna automatisch vernieuwd."
+            : saved?.analytics_token_set
+              ? " Vernieuwen kan niet: log in via de knop hierboven."
+              : ""}
+        </p>
+
+        <div className="form-row">
           <div>
             <label className="field">
-              Token {saved?.analytics_token_set ? "— ✓ opgeslagen (laat leeg om te behouden)" : ""}
+              Of plak handmatig een token
+              {saved?.analytics_token_set ? " (laat leeg om het huidige te behouden)" : ""}
             </label>
             <input
               type="password" value={token} onChange={(e) => setToken(e.target.value)}
-              placeholder={saved?.analytics_token_set ? "•••••••• (opgeslagen)" : "Bearer-token uit de Google-login"}
+              placeholder={saved?.analytics_token_set ? "•••••••• (opgeslagen)" : "Bearer-token uit de databron"}
             />
           </div>
-        </div>
-        <div className="form-row">
-          <button className="ghost" type="button" onClick={testDataSource}>Verbinding testen</button>
-          {testMsg && <span className="hint" style={{ alignSelf: "center" }}>{testMsg}</span>}
         </div>
         <p className="hint">
           Eigen analytics-service voor Google Analytics 4, Search Console en Google Ads, onder één

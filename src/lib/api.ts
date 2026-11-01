@@ -42,6 +42,19 @@ export async function testAnalytics(): Promise<string> {
   return invoke<string>("test_analytics");
 }
 
+/**
+ * Logt in op de databron: de app registreert zich bij de service (DCR), opent je
+ * browser voor de Google-login en vangt de code op een lokale poort op.
+ */
+export async function analyticsLogin(baseUrl: string): Promise<string> {
+  return invoke<string>("analytics_login", { baseUrl });
+}
+
+/** Wist de inloggegevens van de databron. */
+export async function analyticsLogout(): Promise<void> {
+  return invoke("analytics_logout");
+}
+
 export async function getAccounts(): Promise<Record<string, string>> {
   return invoke("get_accounts");
 }
@@ -89,6 +102,8 @@ export async function recordRankPoints(
 export interface SettingsStatus {
   analytics_base_url: string | null;
   analytics_token_set: boolean;
+  /** True als er een refresh-token is: de app kan het token dan zelf vernieuwen. */
+  analytics_can_refresh: boolean;
   mistral_key_set: boolean;
   mistral_model: string;
   accounts: Record<string, string>;

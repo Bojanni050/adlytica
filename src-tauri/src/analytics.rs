@@ -8,7 +8,9 @@
 //! Het bearer-token komt uit de Google-login van de service (Instellingen →
 //! Databron); dit is geen API-key van een derde partij meer.
 
+use crate::oauth::{self, Credentials};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 
 /// Standaardadres van de analytics-service.
 pub const DEFAULT_BASE_URL: &str = "https://analytics.studiovanderheide.nl";
@@ -78,11 +80,11 @@ fn error_message(text: &str) -> String {
 pub struct AnalyticsClient {
     http: reqwest::Client,
     base_url: String,
-    token: String,
+    creds: Arc<Mutex<Credentials>>,
 }
 
 impl AnalyticsClient {
-    pub fn new(base_url: Option<String>, token: String) -> Self {
+    pub fn new(base_url: Option<String>, creds: Credentials) -> Self {
         let base = base_url
             .map(|b| b.trim().trim_end_matches('/').to_string())
             .filter(|b| !b.is_empty())
@@ -93,7 +95,63 @@ impl AnalyticsClient {
                 .build()
                 .expect("reqwest client"),
             base_url: base,
-            token,
+            creds: Arc::new(Mutex::new(creds)),
+        }
+    }
+
+    /// Huidige inloggegevens (kan door een refresh zijn vernieuwd).
+    pub fn credentials(&self) -> Credentials {
+        self.creds.lock().expect("creds lock").clone()
+    }
+
+    fn token(&self) -> String {
+        self.creds.lock().expect("creds lock").access_token.clone()
+    }
+
+    /// Wisselt het refresh-token voor een nieuw access-token. Geeft `false` als
+    /// dat niet kan (geen refresh-token, of de service weigert).
+    async fn refresh(&self) -> bool {
+        let (refresh_token, client_id) = {
+            let creds = self.creds.lock().expect("creds lock");
+            (creds.refresh_token.clone(), creds.client_id.clone())
+        };
+        let Some(refresh_token) = refresh_token else {
+            return false;
+        };
+        match oauth::refresh(&self.base_url, &refresh_token, client_id.as_deref()).await {
+            Ok(fresh) => {
+                *self.creds.lock().expect("creds lock") = fresh;
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// POST met bearer-token; bij een 401 wordt één keer ververst en opnieuw geprobeerd,
+    /// zodat een verlopen access-token niet meteen om een nieuwe login vraagt.
+    async fn post_authorized(&self, url: &str, body: &serde_json::Value) -> Result<String, AnalyticsError> {
+        let mut attempted_refresh = false;
+        loop {
+            let resp = self
+                .http
+                .post(url)
+                .bearer_auth(self.token())
+                .json(body)
+                .send()
+                .await?;
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+
+            if status == 401 && !attempted_refresh {
+                attempted_refresh = true;
+                if self.refresh().await {
+                    continue;
+                }
+            }
+            if !(200..300).contains(&status) {
+                return Err(AnalyticsError(format!("HTTP {status}: {}", error_message(&text))));
+            }
+            return Ok(text);
         }
     }
 
@@ -120,23 +178,14 @@ impl AnalyticsClient {
             "limit": p.limit,
         });
 
-        let resp = self
-            .http
-            .post(&url)
-            .bearer_auth(&self.token)
-            .json(&body)
-            .send()
-            .await?;
-        let status = resp.status().as_u16();
-        let text = resp.text().await.unwrap_or_default();
-        if !(200..300).contains(&status) {
-            return Err(AnalyticsError(format!(
-                "Databron-fout ({status}) bij POST {url} connector={} fields={} — {}",
+        let text = self.post_authorized(&url, &body).await.map_err(|e| {
+            AnalyticsError(format!(
+                "Databron-fout bij POST {url} connector={} fields={} — {}",
                 p.connector,
                 fields.join(","),
-                error_message(&text)
-            )));
-        }
+                e.0
+            ))
+        })?;
 
         let parsed: serde_json::Value = serde_json::from_str(&text)?;
         if let Some(err) = parsed.get("error").filter(|e| !e.is_null()) {
@@ -166,21 +215,12 @@ impl AnalyticsClient {
             "params": params,
         });
 
-        let resp = self
-            .http
-            .post(&url)
-            .bearer_auth(&self.token)
-            .json(&body)
-            .send()
-            .await?;
-        let status = resp.status().as_u16();
-        let text = resp.text().await.unwrap_or_default();
-        if !(200..300).contains(&status) {
-            return Err(AnalyticsError(format!(
-                "Databron-fout ({status}) bij POST {url} action={action} — {}",
-                error_message(&text)
-            )));
-        }
+        let text = self.post_authorized(&url, &body).await.map_err(|e| {
+            AnalyticsError(format!(
+                "Databron-fout bij POST {url} action={action} — {}",
+                e.0
+            ))
+        })?;
         Ok(serde_json::from_str(&text)?)
     }
 

@@ -1,6 +1,7 @@
 mod adly;
 mod analytics;
 mod audit;
+mod oauth;
 mod config;
 mod dataforseo;
 mod pagespeed;
@@ -15,7 +16,7 @@ use tauri::State;
 #[derive(Default)]
 pub struct AppState {
     pub analytics_base_url: Mutex<Option<String>>,
-    pub analytics_token: Mutex<Option<String>>,
+    pub analytics_creds: Mutex<oauth::Credentials>,
     pub mistral_api_key: Mutex<Option<String>>,
     pub mistral_model: Mutex<String>,
     pub accounts: Mutex<HashMap<String, String>>,
@@ -31,10 +32,21 @@ pub struct AppState {
     pub trends: trends::TrendsState,
 }
 
+fn present(value: String) -> Option<String> {
+    if value.trim().is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
 fn persist(state: &AppState) {
+    let creds = state.analytics_creds.lock().unwrap().clone();
     let cfg = config::AppConfig {
         analytics_base_url: state.analytics_base_url.lock().unwrap().clone(),
-        analytics_token: state.analytics_token.lock().unwrap().clone(),
+        analytics_access_token: present(creds.access_token.clone()),
+        analytics_refresh_token: creds.refresh_token.clone(),
+        analytics_client_id: creds.client_id.clone(),
         mistral_api_key: state.mistral_api_key.lock().unwrap().clone(),
         mistral_model: state.mistral_model.lock().unwrap().clone(),
         accounts: state.accounts.lock().unwrap().clone(),
@@ -58,6 +70,8 @@ fn persist(state: &AppState) {
 pub struct SettingsStatus {
     pub analytics_base_url: Option<String>,
     pub analytics_token_set: bool,
+    /// True als er een refresh-token is: dan kan de app zelf vernieuwen.
+    pub analytics_can_refresh: bool,
     pub mistral_key_set: bool,
     pub mistral_model: String,
     pub accounts: HashMap<String, String>,
@@ -71,14 +85,25 @@ pub struct SettingsStatus {
 }
 
 fn analytics_client(state: &AppState) -> Result<analytics::AnalyticsClient, String> {
-    let token = state
-        .analytics_token
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or_else(|| "Geen databron-token ingesteld. Ga naar Instellingen.".to_string())?;
+    let creds = state.analytics_creds.lock().unwrap().clone();
+    if creds.is_empty() {
+        return Err("Nog niet ingelogd op de databron. Ga naar Instellingen en log in.".to_string());
+    }
     let base = state.analytics_base_url.lock().unwrap().clone();
-    Ok(analytics::AnalyticsClient::new(base, token))
+    Ok(analytics::AnalyticsClient::new(base, creds))
+}
+
+/// Schrijft een door de client vernieuwd token terug naar state en config.
+fn persist_refreshed_creds(state: &AppState, client: &analytics::AnalyticsClient) {
+    let fresh = client.credentials();
+    let changed = {
+        let current = state.analytics_creds.lock().unwrap();
+        current.access_token != fresh.access_token || current.refresh_token != fresh.refresh_token
+    };
+    if changed {
+        *state.analytics_creds.lock().unwrap() = fresh;
+        persist(state);
+    }
 }
 
 #[tauri::command]
@@ -92,9 +117,44 @@ async fn set_analytics_config(
         *state.analytics_base_url.lock().unwrap() = Some(base_url.trim().to_string());
     }
     if !token.trim().is_empty() {
-        *state.analytics_token.lock().unwrap() = Some(token.trim().to_string());
+        let mut creds = state.analytics_creds.lock().unwrap();
+        creds.access_token = token.trim().to_string();
     }
     *state.accounts.lock().unwrap() = accounts;
+    persist(&state);
+    Ok(())
+}
+
+/// Logt in op de databron: DCR + PKCE, browser, loopback-callback.
+#[tauri::command]
+async fn analytics_login(base_url: String, state: State<'_, AppState>) -> Result<String, String> {
+    let base = if base_url.trim().is_empty() {
+        state
+            .analytics_base_url
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| analytics::DEFAULT_BASE_URL.to_string())
+    } else {
+        base_url.trim().to_string()
+    };
+
+    let creds = oauth::login(&base, std::time::Duration::from_secs(300)).await?;
+    let message = if creds.refresh_token.is_some() {
+        "✓ Ingelogd — de app kan het token nu zelf vernieuwen.".to_string()
+    } else {
+        "✓ Ingelogd (zonder refresh-token, dus na verloop opnieuw inloggen).".to_string()
+    };
+    *state.analytics_base_url.lock().unwrap() = Some(base);
+    *state.analytics_creds.lock().unwrap() = creds;
+    persist(&state);
+    Ok(message)
+}
+
+/// Wist de inloggegevens van de databron.
+#[tauri::command]
+async fn analytics_logout(state: State<'_, AppState>) -> Result<(), String> {
+    *state.analytics_creds.lock().unwrap() = oauth::Credentials::default();
     persist(&state);
     Ok(())
 }
@@ -135,7 +195,13 @@ async fn get_settings_status(state: State<'_, AppState>) -> Result<SettingsStatu
             .unwrap()
             .clone()
             .or_else(|| Some(analytics::DEFAULT_BASE_URL.to_string())),
-        analytics_token_set: state.analytics_token.lock().unwrap().is_some(),
+        analytics_token_set: !state.analytics_creds.lock().unwrap().is_empty(),
+        analytics_can_refresh: state
+            .analytics_creds
+            .lock()
+            .unwrap()
+            .refresh_token
+            .is_some(),
         mistral_key_set: state.mistral_api_key.lock().unwrap().is_some(),
         mistral_model: state.mistral_model.lock().unwrap().clone(),
         accounts: state.accounts.lock().unwrap().clone(),
@@ -269,10 +335,9 @@ async fn analytics_query(
     state: State<'_, AppState>,
 ) -> Result<analytics::QueryResult, String> {
     let client = analytics_client(&state)?;
-    client
-        .get_data(&params)
-        .await
-        .map_err(|e| e.to_string())
+    let result = client.get_data(&params).await;
+    persist_refreshed_creds(&state, &client);
+    result.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -284,10 +349,11 @@ async fn analytics_action(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let client = analytics_client(&state)?;
-    client
+    let result = client
         .execute_action(&connector, &account, &action, &params)
-        .await
-        .map_err(|e| e.to_string())
+        .await;
+    persist_refreshed_creds(&state, &client);
+    result.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -492,7 +558,11 @@ async fn dataforseo_gap(
             let cfg = config::load();
             AppState {
                 analytics_base_url: Mutex::new(cfg.analytics_base_url),
-                analytics_token: Mutex::new(cfg.analytics_token),
+                analytics_creds: Mutex::new(oauth::Credentials {
+                    access_token: cfg.analytics_access_token.unwrap_or_default(),
+                    refresh_token: cfg.analytics_refresh_token,
+                    client_id: cfg.analytics_client_id,
+                }),
                 mistral_api_key: Mutex::new(cfg.mistral_api_key),
                 mistral_model: Mutex::new(cfg.mistral_model),
                 accounts: Mutex::new(cfg.accounts),
@@ -514,6 +584,8 @@ async fn dataforseo_gap(
         .invoke_handler(tauri::generate_handler![
             set_analytics_config,
             test_analytics,
+            analytics_login,
+            analytics_logout,
             set_mistral_config,
             get_settings_status,
             get_accounts,
