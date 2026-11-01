@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { analyticsQuery, num, fmt, dateNDaysAgo, Row } from "../lib/api";
+import { analyticsQuery, num, fmt, Row } from "../lib/api";
 import { exportPdf, PdfKpi, PdfSection } from "../lib/pdf";
-
-const DAYS = [30, 90];
+import { useDateRange } from "../lib/dateRange";
 
 interface Block {
   id: string;
@@ -49,7 +48,7 @@ function pathOf(value: unknown): string {
 
 export default function Reports({ accounts }: { accounts: Record<string, string> }) {
   const [title, setTitle] = useState(() => localStorage.getItem("adlytica.report.title") ?? "SEO-rapport");
-  const [days, setDays] = useState(() => Number(localStorage.getItem("adlytica.report.days") ?? 30));
+  const { from, to, days } = useDateRange();
   const [selected, setSelected] = useState<string[]>(loadSelected);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,9 +56,8 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
 
   useEffect(() => {
     localStorage.setItem("adlytica.report.title", title);
-    localStorage.setItem("adlytica.report.days", String(days));
     localStorage.setItem(STORAGE, JSON.stringify(selected));
-  }, [title, days, selected]);
+  }, [title, selected]);
 
   function toggle(id: string) {
     setSelected((current) =>
@@ -73,8 +71,6 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
     setError(null);
     setSaved(null);
     try {
-      const from = dateNDaysAgo(days);
-      const to = dateNDaysAgo(1);
       const needQueries = selected.some((id) => ["summary", "queries", "lhf", "ctr"].includes(id));
       const queries =
         needQueries || selected.includes("summary")
@@ -280,22 +276,6 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
           <div>
             <label className="field">Titel</label>
             <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="SEO-rapport" />
-          </div>
-          <div>
-            <label className="field">Periode</label>
-            <div className="range-switch" role="group" aria-label="Periode">
-              {DAYS.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={days === value ? "range-option active" : "range-option"}
-                  onClick={() => setDays(value)}
-                  aria-pressed={days === value}
-                >
-                  {value} dagen
-                </button>
-              ))}
-            </div>
           </div>
         </div>
 

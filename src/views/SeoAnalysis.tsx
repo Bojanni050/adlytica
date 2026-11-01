@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { analyticsQuery, num, fmt, dateNDaysAgo, Row, getWpSeo, setWpSeo as writeWpSeo, WpSeo } from "../lib/api";
+import { analyticsQuery, num, fmt, Row, getWpSeo, setWpSeo as writeWpSeo, WpSeo } from "../lib/api";
+import { useDateRange } from "../lib/dateRange";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -7,6 +8,7 @@ const TITLE_MAX = 60;
 const DESC_MAX = 160;
 
 export default function SeoAnalysis({ accounts }: Props) {
+  const { from, to } = useDateRange();
   const [pages, setPages] = useState<Row[]>([]);
   const [queries, setQueries] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,12 +34,12 @@ export default function SeoAnalysis({ accounts }: Props) {
           analyticsQuery({
             connector: "searchconsole", account: accounts.searchconsole,
             fields: ["page", "clicks", "impressions", "ctr", "position"],
-            date_from: dateNDaysAgo(89), group_by: ["page"], limit: 1000,
+             date_from: from, date_to: to, group_by: ["page"], limit: 1000,
           }),
           analyticsQuery({
             connector: "searchconsole", account: accounts.searchconsole,
             fields: ["query", "page", "clicks", "impressions", "ctr", "position"],
-            date_from: dateNDaysAgo(89), group_by: ["query", "page"], limit: 5000,
+             date_from: from, date_to: to, group_by: ["query", "page"], limit: 5000,
           }),
         ]);
         setPages(p.sort((a, b) => num(b.clicks) - num(a.clicks)));
@@ -49,7 +51,7 @@ export default function SeoAnalysis({ accounts }: Props) {
       }
     }
     load();
-  }, [accounts]);
+  }, [accounts, from, to]);
 
   const pageQueries = selectedPage
     ? queries.filter((r) => String(r.page) === selectedPage).sort((a, b) => num(b.clicks) - num(a.clicks))

@@ -5,6 +5,7 @@ import {
 } from "recharts";
 import { analyticsQuery, num, fmt, dateNDaysAgo, QueryParams, Row, notifyNow } from "../lib/api";
 import { exportPdf } from "../lib/pdf";
+import { useDateRange } from "../lib/dateRange";
 import {
   DashboardLayout, defaultLayout, loadDashboardLayout, moveVisibleWidget,
   resetDashboardLayout, reorderWidgets, saveDashboardLayout,
@@ -49,8 +50,6 @@ const TOOLTIP_STYLE: React.CSSProperties = {
 const AXIS_TICK = { fill: "#8b98a8", fontSize: 11 };
 
 /** Periodes in dagen; dezelfde waarden worden in de config bewaard. */
-const RANGES = [7, 30, 90, 180];
-
 function compact(value: number): string {
   const abs = Math.abs(value);
   if (abs >= 1_000_000) return `${fmt(value / 1_000_000, 1)}M`;
@@ -809,7 +808,7 @@ export default function Dashboard({ accounts }: Props) {
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
-  const rangeDays = layout.rangeDays ?? 90;
+  const { from: rangeFrom, to: rangeTo, days: rangeDays } = useDateRange();
 
   // De indeling staat in config.json (via de Rust-kant); pas opslaan nadat die is gelezen,
   // anders overschrijft de standaardindeling de bewaarde keuze.
@@ -847,48 +846,48 @@ export default function Dashboard({ accounts }: Props) {
     async function load() {
       setLoading(true);
       setError(null);
-      const from = dateNDaysAgo(rangeDays - 1);
+      const from = rangeFrom;
       const anomalyFrom = dateNDaysAgo(ANOMALY_LOOKBACK - 1);
       const [gsc, ads, ga4, queries, pages, pageDaily, queryDaily, queryPage] = await Promise.all([
         safeQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["date", "clicks", "impressions", "ctr", "position"],
-          date_from: from, group_by: ["date"], limit: 5000,
+           date_from: from, date_to: rangeTo, group_by: ["date"], limit: 5000,
         }),
         safeQuery({
           connector: "google_ads", account: accounts.google_ads,
           fields: ["date", "clicks", "impressions", "spend", "conversions"],
-          date_from: from, group_by: ["date"], limit: 5000,
+           date_from: from, date_to: rangeTo, group_by: ["date"], limit: 5000,
         }),
         safeQuery({
           connector: "googleanalytics4", account: accounts.googleanalytics4,
           fields: ["date", "sessions", "users", "screen_page_views"],
-          date_from: from, group_by: ["date"], limit: 5000,
+           date_from: from, date_to: rangeTo, group_by: ["date"], limit: 5000,
         }),
         safeQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["query", "clicks", "impressions", "ctr", "position"],
-          date_from: from, group_by: ["query"], limit: 500,
+           date_from: from, date_to: rangeTo, group_by: ["query"], limit: 500,
         }),
         safeQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["page", "clicks", "impressions", "ctr", "position"],
-          date_from: from, group_by: ["page"], limit: 500,
+           date_from: from, date_to: rangeTo, group_by: ["page"], limit: 500,
         }),
         safeQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["date", "page", "clicks", "position"],
-          date_from: anomalyFrom, group_by: ["date", "page"], limit: 5000,
+           date_from: anomalyFrom, date_to: rangeTo, group_by: ["date", "page"], limit: 5000,
         }),
         safeQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["date", "query", "clicks", "position"],
-          date_from: anomalyFrom, group_by: ["date", "query"], limit: 5000,
+           date_from: anomalyFrom, date_to: rangeTo, group_by: ["date", "query"], limit: 5000,
         }),
         safeQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["query", "page", "clicks", "impressions", "position"],
-          date_from: dateNDaysAgo(89), group_by: ["query", "page"], limit: 5000,
+           date_from: rangeFrom, date_to: rangeTo, group_by: ["query", "page"], limit: 5000,
         }),
       ]);
       if (cancelled) return;
@@ -923,7 +922,7 @@ export default function Dashboard({ accounts }: Props) {
 
     load();
     return () => { cancelled = true; };
-  }, [accounts, reloadKey, rangeDays, layoutLoaded]);
+  }, [accounts, reloadKey, rangeFrom, rangeTo, layoutLoaded]);
 
   const visibleWidgets = layout.order
     .filter((id) => !layout.hidden.includes(id))
@@ -987,10 +986,6 @@ export default function Dashboard({ accounts }: Props) {
 
   const showSkeleton = loading && !loadedOnce;
   const hiddenCount = layout.hidden.length;
-
-  function setRange(days: number) {
-    setLayout((current) => ({ ...current, rangeDays: days }));
-  }
 
   async function exportReport() {
     setPdfBusy(true);
@@ -1058,19 +1053,6 @@ export default function Dashboard({ accounts }: Props) {
           <p className="subtitle">Search Console, Google Ads en GA4 · laatste {rangeDays} dagen</p>
         </div>
         <div className="dash-actions">
-          <div className="range-switch" role="group" aria-label="Periode">
-            {RANGES.map((days) => (
-              <button
-                key={days}
-                type="button"
-                className={days === rangeDays ? "range-option active" : "range-option"}
-                onClick={() => setRange(days)}
-                aria-pressed={days === rangeDays}
-              >
-                {days}d
-              </button>
-            ))}
-          </div>
           {updatedAt && !loading && (
             <span className="dash-updated">
               Bijgewerkt {updatedAt.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  runAudit, analyticsQuery, dateNDaysAgo, AuditPage, AuditResult, Row, openPath, revealPath,
+  runAudit, analyticsQuery, AuditPage, AuditResult, Row, openPath, revealPath,
 } from "../lib/api";
 import { exportPdf } from "../lib/pdf";
+import { useDateRange } from "../lib/dateRange";
 
 type Filter = "all" | "error" | "warning" | "clean";
 
@@ -82,6 +83,7 @@ function labels(page: AuditPage): string[] {
 }
 
 export default function Audit({ accounts }: { accounts: Record<string, string> }) {
+  const { from, to } = useDateRange();
   const [url, setUrl] = useState(() => localStorage.getItem("adlytica.audit.url") ?? "");
   const [limit, setLimit] = useState(() => Number(localStorage.getItem("adlytica.audit.limit") ?? 100));
   const [result, setResult] = useState<AuditResult | null>(null);
@@ -107,7 +109,8 @@ export default function Audit({ accounts }: { accounts: Record<string, string> }
         connector: "searchconsole",
         account: accounts.searchconsole,
         fields: ["page", "clicks", "impressions"],
-        date_from: dateNDaysAgo(89),
+        date_from: from,
+        date_to: to,
         group_by: ["page"],
         limit: 5000,
       });

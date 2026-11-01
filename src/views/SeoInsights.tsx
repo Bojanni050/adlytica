@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { analyticsQuery, num, fmt, dateNDaysAgo, Row } from "../lib/api";
+import { analyticsQuery, num, fmt, Row } from "../lib/api";
+import { useDateRange } from "../lib/dateRange";
 
 interface Props {
   accounts: Record<string, string>;
@@ -21,10 +22,14 @@ interface Channel {
   sessions: number;
 }
 
-const DAYS = 30;
-
 function key(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function shiftDate(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
 }
 
 function ctrOf(point: { clicks: number; impressions: number }): number {
@@ -52,6 +57,7 @@ function Bar({ value, max, color }: { value: number; max: number; color?: string
 }
 
 export default function SeoInsights({ accounts }: Props) {
+  const { from, to, days } = useDateRange();
   const [queries, setQueries] = useState<Row[]>([]);
   const [previous, setPrevious] = useState<Row[]>([]);
   const [pages, setPages] = useState<Row[]>([]);
@@ -79,36 +85,38 @@ export default function SeoInsights({ accounts }: Props) {
       setLoading(true);
       setError(null);
       const base = { connector: "searchconsole", account };
+      const previousFrom = shiftDate(from, -days);
+      const previousTo = shiftDate(from, -1);
       const [currentRows, previousRows, pageRows, previousPageRows, sourceRows] = await Promise.allSettled([
         analyticsQuery({
           ...base,
           fields: ["query", "clicks", "impressions", "position"],
-          date_from: dateNDaysAgo(DAYS),
-          date_to: dateNDaysAgo(1),
+          date_from: from,
+          date_to: to,
           group_by: ["query"],
           limit: 5000,
         }),
         analyticsQuery({
           ...base,
           fields: ["query", "clicks", "impressions", "position"],
-          date_from: dateNDaysAgo(DAYS * 2),
-          date_to: dateNDaysAgo(DAYS + 1),
+          date_from: previousFrom,
+          date_to: previousTo,
           group_by: ["query"],
           limit: 5000,
         }),
         analyticsQuery({
           ...base,
           fields: ["page", "clicks", "impressions", "position"],
-          date_from: dateNDaysAgo(DAYS),
-          date_to: dateNDaysAgo(1),
+          date_from: from,
+          date_to: to,
           group_by: ["page"],
           limit: 2000,
         }),
         analyticsQuery({
           ...base,
           fields: ["page", "clicks", "impressions", "position"],
-          date_from: dateNDaysAgo(DAYS * 2),
-          date_to: dateNDaysAgo(DAYS + 1),
+          date_from: previousFrom,
+          date_to: previousTo,
           group_by: ["page"],
           limit: 2000,
         }),
@@ -117,8 +125,8 @@ export default function SeoInsights({ accounts }: Props) {
               connector: "googleanalytics4",
               account: accounts.googleanalytics4,
               fields: ["source", "sessions"],
-              date_from: dateNDaysAgo(DAYS),
-              date_to: dateNDaysAgo(1),
+              date_from: from,
+              date_to: to,
               group_by: ["source"],
               limit: 200,
             })
@@ -154,7 +162,7 @@ export default function SeoInsights({ accounts }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [accounts.searchconsole, accounts.googleanalytics4, reloadKey]);
+  }, [accounts.searchconsole, accounts.googleanalytics4, from, to, days, reloadKey]);
 
   const model = useMemo(() => {
     const current = new Map<string, Point>();
@@ -318,7 +326,7 @@ export default function SeoInsights({ accounts }: Props) {
     <div>
       <h1>Zoekanalyse</h1>
       <p className="subtitle">
-        Laatste {DAYS} dagen naast de {DAYS} dagen daarvoor · Search Console
+        Laatste {days} dagen naast de {days} dagen daarvoor · Search Console
         {accounts.googleanalytics4 ? " en GA4" : ""}
       </p>
 

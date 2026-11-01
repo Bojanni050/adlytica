@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import {
-  analyticsQuery, analyticsAction, num, fmt, dateNDaysAgo, Row,
+  analyticsQuery, analyticsAction, num, fmt, Row,
 } from "../lib/api";
+import { useDateRange } from "../lib/dateRange";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -16,6 +17,7 @@ interface CampaignRow {
 }
 
 export default function Campaigns({ accounts }: Props) {
+  const { from, to } = useDateRange();
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export default function Campaigns({ accounts }: Props) {
           "campaign_id", "campaign_name", "status",
           "spend", "clicks", "impressions", "conversions",
         ],
-        date_from: dateNDaysAgo(29), group_by: ["campaign_id"], limit: 500,
+         date_from: from, date_to: to, group_by: ["campaign_id"], limit: 500,
         options: { include_inactive: "true" },
       });
       setCampaigns(
@@ -53,7 +55,7 @@ export default function Campaigns({ accounts }: Props) {
     }
   }
 
-  useEffect(() => { loadCampaigns(); /* eslint-disable-next-line */ }, [accounts]);
+  useEffect(() => { loadCampaigns(); /* eslint-disable-next-line */ }, [accounts, from, to]);
 
   async function toggleCampaign(c: CampaignRow, action: "pause_campaign" | "enable_campaign") {
     try {

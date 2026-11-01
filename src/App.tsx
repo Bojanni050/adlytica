@@ -18,6 +18,7 @@ import Audit from "./views/Audit";
 import Reports from "./views/Reports";
 import Competitors from "./views/Competitors";
 import PageSpeed from "./views/PageSpeed";
+import { DateRangeProvider, DateRangeSelector } from "./lib/dateRange";
 
 type ViewId = "dashboard" | "keywords" | "rankings" | "seo" | "insights" | "reports" | "audit" | "speed" | "competitors" | "campaigns" | "searchterms" | "budget" | "trends" | "settings";
 
@@ -135,7 +136,12 @@ export default function App() {
           </div>
         </div>
       </aside>
-      <main className="content">{views[view]}</main>
+      <DateRangeProvider>
+        <main className="content">
+          <DateRangeSelector />
+          {views[view]}
+        </main>
+      </DateRangeProvider>
       <AdlyPanel accounts={accounts} />
       <CommandPalette
         open={paletteOpen}

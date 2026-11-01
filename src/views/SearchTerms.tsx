@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { analyticsAction, analyticsQuery, num, fmt, dateNDaysAgo, Row } from "../lib/api";
+import { analyticsAction, analyticsQuery, num, fmt, Row } from "../lib/api";
+import { useDateRange } from "../lib/dateRange";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -16,8 +17,6 @@ interface TermRow {
   spend: number;
   conversions: number;
 }
-
-const RANGES = [30, 90];
 
 function toRows(rows: Row[]): TermRow[] {
   return rows.map((r, index) => {
@@ -60,7 +59,7 @@ export default function SearchTerms({ accounts }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [days, setDays] = useState(30);
+  const { from, to, days } = useDateRange();
   const [minSpend, setMinSpend] = useState("1");
   const [filter, setFilter] = useState("");
   const [onlyCandidates, setOnlyCandidates] = useState(true);
@@ -84,7 +83,8 @@ export default function SearchTerms({ accounts }: Props) {
             "ad_group_id", "ad_group_name",
             "clicks", "impressions", "spend", "conversions",
           ],
-          date_from: dateNDaysAgo(days - 1),
+           date_from: from,
+           date_to: to,
           group_by: ["search_term", "campaign_id", "campaign_name", "ad_group_id", "ad_group_name"],
           limit: 3000,
         });
@@ -97,7 +97,7 @@ export default function SearchTerms({ accounts }: Props) {
     }
     load();
     return () => { cancelled = true; };
-  }, [accounts, days, reloadKey]);
+  }, [accounts, from, to, reloadKey]);
 
   const threshold = Math.max(0, parseFloat(minSpend.replace(",", ".")) || 0);
   const selectedTerms = useMemo(() => Object.values(selected), [selected]);
@@ -239,18 +239,6 @@ export default function SearchTerms({ accounts }: Props) {
       </div>
 
       <div className="toolbar">
-        <div className="range-switch">
-          {RANGES.map((value) => (
-            <button
-              key={value}
-              className={`range-option${days === value ? " active" : ""}`}
-              aria-pressed={days === value}
-              onClick={() => setDays(value)}
-            >
-              {value}d
-            </button>
-          ))}
-        </div>
         <input
           type="text"
           value={filter}

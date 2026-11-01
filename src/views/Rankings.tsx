@@ -3,9 +3,10 @@ import {
   CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  dateNDaysAgo, fmt, getRankings, num, RankPoint, RankingStore, recordRankPoints,
+  fmt, getRankings, num, RankPoint, RankingStore, recordRankPoints,
   Row, trackKeyword, untrackKeyword, analyticsQuery,
 } from "../lib/api";
+import { useDateRange } from "../lib/dateRange";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -66,6 +67,7 @@ function Sparkline({ points }: { points: RankPoint[] }) {
 }
 
 export default function Rankings({ accounts }: Props) {
+  const { from, to } = useDateRange();
   const [store, setStore] = useState<RankingStore>({ tracked: [], history: {} });
   const [keyword, setKeyword] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -81,7 +83,7 @@ export default function Rankings({ accounts }: Props) {
       connector: "searchconsole",
       account: accounts.searchconsole,
       fields: ["date", "query", "position"],
-      date_from: dateNDaysAgo(89),
+       date_from: from, date_to: to,
       group_by: ["date", "query"],
       limit: 5000,
     });
@@ -119,7 +121,7 @@ export default function Rankings({ accounts }: Props) {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accounts.searchconsole]);
+  }, [accounts.searchconsole, from, to]);
 
   async function addKeyword(value: string) {
     const term = value.trim();
@@ -147,7 +149,7 @@ export default function Rankings({ accounts }: Props) {
         connector: "searchconsole",
         account: accounts.searchconsole,
         fields: ["query", "clicks", "impressions"],
-        date_from: dateNDaysAgo(29),
+         date_from: from, date_to: to,
         group_by: ["query"],
         limit: 10,
       });

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { analyticsQuery, num, fmt, dateNDaysAgo, Row, adlyChat } from "../lib/api";
+import { analyticsQuery, num, fmt, Row, adlyChat } from "../lib/api";
+import { useDateRange } from "../lib/dateRange";
 import { exportPdf } from "../lib/pdf";
 
 interface Props { accounts: Record<string, string>; }
@@ -63,6 +64,7 @@ function positionBadge(hit: SiteHit | undefined) {
 }
 
 export default function KeywordSearch({ accounts }: Props) {
+  const { from, to } = useDateRange();
   const [mode, setMode] = useState<Mode>("gsc");
   const [term, setTerm] = useState("");
   const [seeds, setSeeds] = useState("");
@@ -93,7 +95,7 @@ export default function KeywordSearch({ accounts }: Props) {
         const data = await analyticsQuery({
           connector: "searchconsole", account: accounts.searchconsole,
           fields: ["query", "clicks", "impressions", "ctr", "position"],
-          date_from: dateNDaysAgo(89), group_by: ["query"], limit: 5000,
+           date_from: from, date_to: to, group_by: ["query"], limit: 5000,
         });
         setRows(
           term.trim() === ""
@@ -119,7 +121,7 @@ export default function KeywordSearch({ accounts }: Props) {
           ? analyticsQuery({
               connector: "searchconsole", account: accounts.searchconsole,
               fields: ["query", "clicks", "impressions", "position"],
-              date_from: dateNDaysAgo(89), group_by: ["query"], limit: 5000,
+              date_from: from, date_to: to, group_by: ["query"], limit: 5000,
             }).catch(() => [] as Row[])
           : Promise.resolve([] as Row[]);
         setGapLoading(true);
