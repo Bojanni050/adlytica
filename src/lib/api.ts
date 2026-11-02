@@ -352,8 +352,33 @@ export interface ChatMessage {
   content: string;
 }
 
-export async function adlyChat(messages: ChatMessage[], context?: string): Promise<string> {
-  return invoke("adly_chat", { messages, context: context ?? null });
+/**
+ * Eén bron in het brondossier dat met de vraag meegaat. De rijen zijn al
+ * tekst: het model krijgt geen getallen om zelf mee te rekenen, alleen wat er
+ * letterlijk in de databron stond.
+ */
+export interface AdlySource {
+  id: number;
+  label: string;
+  connector: string;
+  account: string;
+  date_from: string;
+  date_to: string;
+  fields: string[];
+  rows: string[][];
+  total_rows: number;
+}
+
+export async function adlyChat(
+  messages: ChatMessage[],
+  context?: string,
+  sources?: AdlySource[],
+): Promise<string> {
+  return invoke("adly_chat", {
+    messages,
+    context: context ?? null,
+    sources: sources ?? null,
+  });
 }
 
 export interface TrendsRequest {

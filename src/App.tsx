@@ -145,7 +145,8 @@ export default function App() {
   };
 
   return (
-    <div className="app-shell">
+    <DateRangeProvider>
+      <div className="app-shell">
       <aside className="sidebar">
         <div className="logo">
           {brand?.logo ? (
@@ -188,19 +189,18 @@ export default function App() {
           </div>
         </div>
       </aside>
-      <DateRangeProvider>
         <main className="content">
           <DateRangeSelector />
           {views[view]}
         </main>
-      </DateRangeProvider>
-      <AdlyPanel accounts={accounts} />
+        <AdlyPanel accounts={accounts} />
       <CommandPalette
         open={paletteOpen}
         items={NAV.map((item) => ({ id: item.id, label: item.label, icon: item.icon }))}
         onNavigate={(id) => setView(id as ViewId)}
         onClose={() => setPaletteOpen(false)}
-      />
-    </div>
+        />
+      </div>
+    </DateRangeProvider>
   );
 }

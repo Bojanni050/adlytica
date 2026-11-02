@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  adlyChat, analyticsAction, analyticsQuery, num, dateNDaysAgo, ChatMessage,
+  AdlySource, ChatMessage, adlyChat, adsApplyChange,
 } from "../lib/api";
+import { buildAdlySources } from "../lib/adlySources";
+import { useDateRange } from "../lib/dateRange";
 
 interface Props {
   accounts: Record<string, string>;
@@ -18,14 +20,19 @@ interface AdlyAction {
 interface UIMessage extends ChatMessage {
   id: number;
   executedActions?: string[];
+  /** Bronnen die bij dit antwoord gebruikt zijn (zonder rijen in opslag). */
+  sources?: AdlySource[];
 }
 
 const STORAGE_KEY = "adlytica.chat.history.v1";
 
+/** Acties die de app echt veilig kan uitvoeren (zelfde whitelist als de backend). */
+const EXECUTABLE = ["pause_campaign", "enable_campaign", "push_negative_keywords"];
+
 const SUGGESTIONS = [
   "Analyseer mijn SEO-kansen en geef top 5 prioriteiten",
-  "Ontwerp een nieuwe Search-campagne voor white-vision.nl",
-  "Pauzeer de slechtst presterende campagne",
+  "Welke campagnes kosten het meest en wat levert dat op?",
+  "Waar verlies ik vertoningen in Search Console?",
   "Bekijk mijn campagneprestaties en geef optimalisatietips",
 ];
 
@@ -40,9 +47,20 @@ function loadHistory(): UIMessage[] {
   }
 }
 
+/**
+ * De rijen van een brondossier zijn te groot voor localStorage (honderd
+ * berichten × tientallen rijen). Bewaar alleen de kenmerken van de bron, zodat
+ * een oud antwoord na een herstart nog steeds herkenbaar blijft als "gebaseerd
+ * op [1] Search Console · top zoektermen".
+ */
+function trimForStorage(message: UIMessage): UIMessage {
+  if (!message.sources?.length) return message;
+  return { ...message, sources: message.sources.map((source) => ({ ...source, rows: [] })) };
+}
+
 function saveHistory(messages: UIMessage[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-100)));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-100).map(trimForStorage)));
   } catch {
     /* opslag vol of niet beschikbaar */
   }
@@ -63,7 +81,73 @@ function parseAction(text: string): { action: AdlyAction; rest: string } | null 
   }
 }
 
+function citedIds(text: string): number[] {
+  const found = new Set<number>();
+  for (const match of text.matchAll(/\[(\d+)\]/g)) {
+    const id = Number(match[1]);
+    if (Number.isFinite(id)) found.add(id);
+  }
+  return [...found];
+}
+
+function period(source: AdlySource): string {
+  if (!source.date_from && !source.date_to) return "";
+  return `${source.date_from} t/m ${source.date_to}`;
+}
+
+function SourceList({ sources, text }: { sources: AdlySource[]; text: string }) {
+  const cited = citedIds(text);
+  return (
+    <div className="adly-sources">
+      <div className="adly-sources-head">
+        <span>Bronnen</span>
+        {cited.length === 0 && (
+          <span className="adly-sources-warn" title="Het antwoord verwijst niet naar een genummerde bron; controleer de cijfers zelf.">
+            geen verwijzing in dit antwoord
+          </span>
+        )}
+      </div>
+      {sources.map((source) => (
+        <div key={source.id} className={cited.includes(source.id) ? "adly-source cited" : "adly-source"}>
+          <div className="adly-source-line">
+            <span className="adly-source-id">[{source.id}]</span>
+            <span className="adly-source-label">{source.label}</span>
+            <span className="adly-source-meta">
+              {[source.account, period(source), `${source.rows.length} rijen`].filter(Boolean).join(" · ")}
+            </span>
+          </div>
+          {source.rows.length > 0 && (
+            <details className="adly-source-detail">
+              <summary>Bekijk de gebruikte rijen</summary>
+              <div className="adly-source-table">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      {source.fields.map((field) => <th key={field}>{field}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {source.rows.slice(0, 10).map((row, index) => (
+                      <tr key={index}>
+                        {row.map((value, cellIndex) => <td key={cellIndex}>{value}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {source.rows.length > 10 && (
+                  <p className="hint">Eerste 10 van {source.rows.length} rijen — het model kreeg ze allemaal.</p>
+                )}
+              </div>
+            </details>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AdlyChat({ accounts, compact = false }: Props) {
+  const { from, to } = useDateRange();
   const [messages, setMessages] = useState<UIMessage[]>(loadHistory);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -75,53 +159,30 @@ export default function AdlyChat({ accounts, compact = false }: Props) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
 
-  async function buildContext(): Promise<string | undefined> {
-    if (!withContext) return undefined;
+  async function buildDossier(): Promise<{ context?: string; sources?: AdlySource[] }> {
+    if (!withContext) {
+      setContextInfo("zonder data — antwoord is niet op cijfers gebaseerd");
+      return {};
+    }
     try {
-      const [gsc, ads] = await Promise.all([
-        analyticsQuery({
-          connector: "searchconsole", account: accounts.searchconsole,
-          fields: ["query", "clicks", "impressions", "ctr", "position"],
-          date_from: dateNDaysAgo(89), group_by: ["query"], limit: 3000,
-        }),
-        analyticsQuery({
-          connector: "google_ads", account: accounts.google_ads,
-          fields: ["campaign_id", "campaign_name", "status", "spend", "clicks", "impressions", "conversions"],
-          date_from: dateNDaysAgo(29), group_by: ["campaign_id"], limit: 200,
-          options: { include_inactive: "true" },
-        }),
-      ]);
-
-      const topQueries = gsc
-        .sort((a, b) => num(b.impressions) - num(a.impressions))
-        .slice(0, 30)
-        .map((r) => `${r.query} | klikken ${num(r.clicks)} | impr ${num(r.impressions)} | ctr ${num(r.ctr).toFixed(1)}% | pos ${num(r.position).toFixed(1)}`)
-        .join("\n");
-
-      const chances = gsc
-        .filter((r) => num(r.position) >= 5 && num(r.position) <= 20 && num(r.impressions) > 100)
-        .sort((a, b) => num(b.impressions) - num(a.impressions))
-        .slice(0, 15)
-        .map((r) => `${r.query} | impr ${num(r.impressions)} | pos ${num(r.position).toFixed(1)} | ctr ${num(r.ctr).toFixed(1)}%`)
-        .join("\n");
-
-      const campaigns = ads
-        .map((r) => `campaign_id ${r.campaign_id}: ${r.campaign_name} | status ${r.status} | kosten ${num(r.spend).toFixed(2)} | klikken ${num(r.clicks)} | conv ${num(r.conversions)}`)
-        .join("\n") || "(geen campagnes)";
-
-      const ctx =
-        `SEARCH CONSOLE (laatste 90 dagen) — top 30 zoektermen op impressies:\n${topQueries}\n\n` +
-        `SEO-KANSEN (positie 5-20, >100 impressies):\n${chances || "(geen)"}\n\n` +
-        `GOOGLE ADS CAMPAGNES (laatste 30 dagen, campaign_id is de unieke ID):\n${campaigns}`;
-      setContextInfo(`${gsc.length} zoektermen · ${ads.length} campagnes meegestuurd`);
-      return ctx;
-    } catch {
-      setContextInfo("context ophalen mislukt — chat werkt zonder datacontext");
-      return undefined;
+      const dossier = await buildAdlySources({ accounts, from, to });
+      setContextInfo(dossier.summary);
+      return {
+        context: `De gebruiker kijkt in de app naar de periode ${from} t/m ${to}. Alle cijfers staan in het brondossier hieronder.`,
+        sources: dossier.sources,
+      };
+    } catch (e) {
+      setContextInfo("databron ophalen mislukt — chat werkt zonder cijfers");
+      return {};
     }
   }
 
   async function executeAction(msgId: number, act: AdlyAction) {
+    if (!EXECUTABLE.includes(act.action)) {
+      appendMessage(`⚠️ Deze actie (${act.action}) kan de app niet uitvoeren.`);
+      return;
+    }
+
     setMessages((prev) => {
       const next = prev.map((m) =>
         m.id === msgId
@@ -133,35 +194,23 @@ export default function AdlyChat({ accounts, compact = false }: Props) {
     });
 
     try {
-      const params = { ...act.params };
-      const microsKeys = ["amount", "target_cpa", "cpc_bid_ceiling"];
-      for (const key of microsKeys) {
-        if (typeof params[key] === "number") {
-          (params as Record<string, unknown>)[key === "amount" ? "amount_micros" : `${key}_micros`] =
-            Math.round((params[key] as number) * 1_000_000);
-          delete params[key];
-        }
+      const result = await adsApplyChange(act.action, act.params, act.label);
+      if (result.entry.status === "mislukt") {
+        appendMessage(`⚠️ Actie mislukt: ${result.entry.message ?? "onbekende fout"}`);
+      } else {
+        appendMessage(`✅ Uitgevoerd: ${act.label} — staat in het logboek bij Advertentiecampagnes en is daar terug te draaien.`);
       }
-
-      await analyticsAction("google_ads", accounts.google_ads, act.action, params);
-      setMessages((prev) => {
-        const next = [
-          ...prev,
-          { id: Date.now(), role: "assistant" as const, content: `✅ Uitgevoerd: ${act.label}` },
-        ];
-        saveHistory(next);
-        return next;
-      });
     } catch (e) {
-      setMessages((prev) => {
-        const next = [
-          ...prev,
-          { id: Date.now(), role: "assistant" as const, content: `⚠️ Actie mislukt: ${e}` },
-        ];
-        saveHistory(next);
-        return next;
-      });
+      appendMessage(`⚠️ Actie mislukt: ${e}`);
     }
+  }
+
+  function appendMessage(content: string) {
+    setMessages((prev) => {
+      const next = [...prev, { id: Date.now(), role: "assistant" as const, content }];
+      saveHistory(next);
+      return next;
+    });
   }
 
   async function send() {
@@ -176,12 +225,16 @@ export default function AdlyChat({ accounts, compact = false }: Props) {
     setBusy(true);
 
     try {
-      const context = await buildContext();
+      const { context, sources } = await buildDossier();
       const reply = await adlyChat(
         history.map(({ role, content }) => ({ role, content })),
-        context
+        context,
+        sources
       );
-      const next = [...history, { id: Date.now() + 1, role: "assistant" as const, content: reply }];
+      const next = [
+        ...history,
+        { id: Date.now() + 1, role: "assistant" as const, content: reply, sources },
+      ];
       setMessages(next);
       saveHistory(next);
     } catch (e) {
@@ -206,7 +259,7 @@ export default function AdlyChat({ accounts, compact = false }: Props) {
             <h1>Adly — AI-assistent</h1>
             <p className="subtitle" style={{ marginBottom: 0 }}>
               Je AI-collega voor SEO en Google Ads
-              {contextInfo ? ` · context: ${contextInfo}` : ""}
+              {contextInfo ? ` · ${contextInfo}` : ""}
             </p>
           </div>
           {messages.length > 0 && (
@@ -273,6 +326,9 @@ export default function AdlyChat({ accounts, compact = false }: Props) {
                       {alreadyDone ? "✓ Uitgevoerd" : `Uitvoeren: ${parsed.action.label}`}
                     </button>
                   </div>
+                )}
+                {m.role === "assistant" && m.sources && m.sources.length > 0 && (
+                  <SourceList sources={m.sources} text={text} />
                 )}
               </div>
             </div>

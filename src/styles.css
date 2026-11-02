@@ -1369,3 +1369,34 @@ button.link { background: none; border: none; color: var(--accent); cursor: poin
 .adly-chat .chat-window { padding: 0 2px 12px; }
 .adly-chat .chat-bubble { max-width: 88%; font-size: 13px; }
 .adly-chat .chat-empty { font-size: 12.5px; }
+
+/* Bronnen onder een antwoord: klein, controleerbaar, niet schreeuwerig. */
+.adly-sources {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+}
+.adly-sources-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.adly-sources-warn { color: var(--warn); font-size: 10.5px; letter-spacing: 0; text-transform: none; }
+.adly-source { padding: 3px 0; }
+.adly-source-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.adly-source-id { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.adly-source.cited .adly-source-id { color: var(--accent); }
+.adly-source-meta { color: var(--muted); font-size: 10.5px; }
+.adly-source-detail { margin-top: 3px; }
+.adly-source-detail summary { cursor: pointer; color: var(--muted); font-size: 10.5px; }
+.adly-source-detail summary:hover { color: var(--accent); }
+.adly-source-table { max-height: 220px; margin-top: 6px; overflow: auto; }
+.adly-source-table table.data { font-size: 10.5px; }
+.adly-source-table .hint { margin: 4px 0 0; font-size: 10.5px; }

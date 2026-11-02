@@ -8,6 +8,82 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+/// Eén stuk bewijs dat de assistent mag gebruiken, inclusief herkomst.
+///
+/// De rijen gaan als tekst mee (geen getallen): zo kan het model niets
+/// herrekenen en blijft elk cijfer in het antwoord herleidbaar tot een bron.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AdlySource {
+    /// Nummer zoals het in het antwoord terugkomt: [1], [2], …
+    pub id: usize,
+    pub label: String,
+    pub connector: String,
+    #[serde(default)]
+    pub account: String,
+    #[serde(default)]
+    pub date_from: String,
+    #[serde(default)]
+    pub date_to: String,
+    #[serde(default)]
+    pub fields: Vec<String>,
+    #[serde(default)]
+    pub rows: Vec<Vec<String>>,
+    /// Totaal aantal rijen in de bron; `rows` kan afgekapt zijn.
+    #[serde(default)]
+    pub total_rows: usize,
+}
+
+const MAX_SOURCES: usize = 6;
+const MAX_SOURCE_ROWS: usize = 40;
+const MAX_CELL_CHARS: usize = 60;
+
+/// Maakt van de bronnen een compact, genummerd dossier voor het model.
+pub fn format_sources(sources: &[AdlySource]) -> String {
+    let mut out = String::new();
+    for source in sources.iter().take(MAX_SOURCES) {
+        let period = if source.date_from.is_empty() && source.date_to.is_empty() {
+            String::new()
+        } else {
+            format!(" · {} t/m {}", source.date_from, source.date_to)
+        };
+        let account = if source.account.is_empty() {
+            String::new()
+        } else {
+            format!(" · {}", source.account)
+        };
+        let total = source.total_rows.max(source.rows.len());
+        out.push_str(&format!(
+            "\n[{}] {}{} · {}{} · {} van {} rijen\n",
+            source.id,
+            source.label,
+            account,
+            source.connector,
+            period,
+            source.rows.len().min(MAX_SOURCE_ROWS),
+            total
+        ));
+        if !source.fields.is_empty() {
+            out.push_str(&format!("kolommen: {}\n", source.fields.join(" | ")));
+        }
+        for row in source.rows.iter().take(MAX_SOURCE_ROWS) {
+            let cells: Vec<String> = row
+                .iter()
+                .map(|cell| {
+                    let trimmed = cell.trim();
+                    if trimmed.chars().count() > MAX_CELL_CHARS {
+                        let cut: String = trimmed.chars().take(MAX_CELL_CHARS).collect();
+                        format!("{cut}…")
+                    } else {
+                        trimmed.to_string()
+                    }
+                })
+                .collect();
+            out.push_str(&format!("{}\n", cells.join(" | ")));
+        }
+    }
+    out
+}
+
 #[derive(Debug)]
 pub struct AdlyError(pub String);
 
@@ -110,7 +186,7 @@ impl AdlyClient {
     }
 }
 
-pub fn system_prompt(context: &Option<String>) -> String {
+pub fn system_prompt(context: &Option<String>, sources: &[AdlySource]) -> String {
     let mut prompt = String::from(
         "Je bent Adly, de ingebouwde AI-assistent van de Adlytica-desktopapp. \
 Je helpt een Nederlands marketingteam (White Vision, white-vision.nl) met SEO-analyse en \
@@ -121,20 +197,27 @@ Antwoord altijd in het Nederlands, beknopt en praktisch: korte tekst, opsomminge
 concrete volgende stappen. Vraag door naar gegevens als die ontbreken. \
 Bedragen zijn in euro's. \
 \
-EEN-KLIK ACTIES: de app kan Google Ads-wijzigingen direct uitvoeren. Wanneer de gebruiker \
-jou vraagt een campagne te pauzeren of te activeren, het dagbudget te wijzigen of de \
-biedstrategie aan te passen, leg dan kort uit wat je gaat doen en voeg daarna precies een \
-actieblok toe op een eigen regel, exact in dit formaat: \
+EEN-KLIK ACTIES: de app kan een paar Google Ads-wijzigingen direct uitvoeren. Wanneer de gebruiker \
+jou vraagt een campagne te pauzeren of te activeren, of negative keywords toe te voegen, leg dan kort \
+uit wat je gaat doen en voeg daarna precies een actieblok toe op een eigen regel, exact in dit formaat: \
 [[ACTION]] {\"action\": \"...\", \"label\": \"...\", \"params\": {...}} \
 Beschikbare acties: \
 pause_campaign (params: campaign_id), \
 enable_campaign (params: campaign_id), \
-set_campaign_budget (params: campaign_id, budget_type \"daily\" of \"lifetime\", amount in euro als getal), \
-set_campaign_bidding_strategy (params: campaign_id, strategy een van manual_cpc, target_cpa, target_roas, maximize_conversions, maximize_conversion_value, maximize_clicks; plus target_cpa in euro bij target_cpa/maximize_conversions, target_roas als ratio bij target_roas/maximize_conversion_value, of cpc_bid_ceiling in euro bij maximize_clicks). \
+push_negative_keywords (params: campaign_id, keywords als lijst met zoektermen). \
+Budgetten en biedstrategieën kun je alleen adviseren, niet uitvoeren: daar bestaat geen actieblok voor. \
 Gebruik altijd de campaign_id uit de meegestuurde datacontext. Als die niet beschikbaar is, \
 vraag dan om bevestiging van de campagne voordat je een actieblok maakt. \
 Maak alleen een actieblok als de gebruiker er expliciet om vraagt of duidelijk akkoord gaat. \
 Voer nooit meerdere tegenstrijdige wijzigingen op dezelfde campagne uit in een antwoord.",
+    );
+    prompt.push_str(
+        "\n\nBRONVERWIJZING: je krijgt een genummerd brondossier met de cijfers waarover je mag praten. \
+Gebruik uitsluitend getallen die letterlijk in dat dossier staan en verwijs achter elke bewering over \
+cijfers naar de gebruikte bron met [1], [2], enzovoort. Verzin geen cijfers, geen totalen en geen \
+trends die je niet uit het dossier kunt afleiden; reken ook niet zelf nieuwe totalen uit. \
+Staat het gevraagde niet in het dossier, zeg dat dan expliciet en vraag om de juiste gegevens. \
+Noem in je antwoord kort de periode waarop de cijfers betrekking hebben.",
     );
     if let Some(ctx) = context {
         if !ctx.trim().is_empty() {
@@ -142,5 +225,57 @@ Voer nooit meerdere tegenstrijdige wijzigingen op dezelfde campagne uit in een a
             prompt.push_str(ctx);
         }
     }
+    if !sources.is_empty() {
+        prompt.push_str("\n\nBRONDOSSIER (genummerd; dit zijn je enige cijfers):");
+        prompt.push_str(&format_sources(sources));
+    }
     prompt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source(id: usize, rows: Vec<Vec<String>>) -> AdlySource {
+        AdlySource {
+            id,
+            label: "Top zoektermen".into(),
+            connector: "searchconsole".into(),
+            account: "white-vision.nl".into(),
+            date_from: "2026-08-05".into(),
+            date_to: "2026-11-02".into(),
+            fields: vec!["query".into(), "clicks".into()],
+            rows,
+            total_rows: 312,
+        }
+    }
+
+    #[test]
+    fn brondossier_nummert_en_beperkt_rijen() {
+        let rows: Vec<Vec<String>> = (0..50)
+            .map(|i| vec![format!("zoekterm {i}"), i.to_string()])
+            .collect();
+        let dossier = format_sources(&[source(1, rows)]);
+        assert!(dossier.contains("[1] Top zoektermen"), "bron moet genummerd zijn");
+        assert!(dossier.contains("40 van 312 rijen"), "rijen moeten afgekapt worden");
+        assert!(dossier.contains("kolommen: query | clicks"));
+        assert!(!dossier.contains("zoekterm 40"), "rij 41 mag niet meegestuurd worden");
+    }
+
+    #[test]
+    fn lange_cellen_worden_afgekapt() {
+        let long = "x".repeat(120);
+        let dossier = format_sources(&[source(1, vec![vec![long, "3".into()]])]);
+        assert!(dossier.contains('…'), "lange cel moet met ellipsis eindigen");
+    }
+
+    #[test]
+    fn systeemprompt_eist_bronverwijzing() {
+        let prompt = system_prompt(&None, &[source(1, vec![vec!["zwembad".into(), "12".into()]])]);
+        assert!(prompt.contains("BRONVERWIJZING"));
+        assert!(prompt.contains("BRONDOSSIER"));
+        assert!(prompt.contains("[1] Top zoektermen"));
+        assert!(prompt.contains("push_negative_keywords"));
+        assert!(!prompt.contains("set_campaign_budget"), "niet-uitvoerbare acties horen er niet in");
+    }
 }

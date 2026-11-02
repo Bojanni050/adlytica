@@ -742,6 +742,7 @@ async fn analytics_action(
 async fn adly_chat(
     messages: Vec<adly::ChatMessage>,
     context: Option<String>,
+    sources: Option<Vec<adly::AdlySource>>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let key = state
@@ -752,7 +753,7 @@ async fn adly_chat(
         .ok_or_else(|| "Geen Mistral API-key ingesteld. Ga naar Instellingen.".to_string())?;
     let model = state.mistral_model.lock().unwrap().clone();
     let client = adly::AdlyClient::new(key);
-    let system = adly::system_prompt(&context);
+    let system = adly::system_prompt(&context, sources.as_deref().unwrap_or(&[]));
     client
         .chat(&model, &system, &messages)
         .await
