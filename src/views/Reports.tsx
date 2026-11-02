@@ -3,7 +3,7 @@ import {
   analyticsQuery, num, fmt, Row, ReportSnapshot,
   getReportSnapshots, saveReportSnapshot, deleteReportSnapshot,
 } from "../lib/api";
-import { exportPdf, PdfKpi, PdfSection } from "../lib/pdf";
+import { exportPdf, PdfKpi, PdfMeta, PdfSection } from "../lib/pdf";
 import { useDateRange } from "../lib/dateRange";
 
 interface Block {
@@ -59,6 +59,19 @@ function formatMoment(value: string): string {
   const date = new Date(value);
   if (!value || Number.isNaN(date.getTime())) return "onbekend";
   return date.toLocaleString("nl-NL", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function longDate(value: string): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (!value || Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function periodMeta(from: string, to: string): PdfMeta[] {
+  return [
+    { label: "Periode", value: `${longDate(from)} t/m ${longDate(to)}` },
+    { label: "Gemaakt op", value: new Date().toLocaleString("nl-NL", { dateStyle: "long", timeStyle: "short" }) },
+  ];
 }
 
 export default function Reports({ accounts }: { accounts: Record<string, string> }) {
@@ -302,6 +315,7 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
         subtitle: `Laatste ${days} dagen · ${new Date().toLocaleDateString("nl-NL")}`,
         kpis,
         sections,
+        meta: periodMeta(from, to),
         filename: `adlytica-rapport-${new Date().toISOString().slice(0, 10)}.pdf`,
       });
       setSaved(path);
@@ -317,7 +331,7 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
       setError(null);
       const path = await exportPdf({
         title: snapshot.title,
-        subtitle: `${snapshot.date_from} t/m ${snapshot.date_to} · bevroren op ${formatMoment(snapshot.created_at)}`,
+        subtitle: `Bevroren rapport · de cijfers zoals ze op ${formatMoment(snapshot.created_at)} waren`,
         kpis: snapshot.kpis,
         sections: snapshot.sections.map((section) => ({
           title: section.title,
@@ -325,6 +339,11 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
           rows: section.rows,
           note: section.note ?? undefined,
         })),
+        meta: [
+          { label: "Periode", value: `${longDate(snapshot.date_from)} t/m ${longDate(snapshot.date_to)}` },
+          { label: "Bevroren op", value: formatMoment(snapshot.created_at) },
+          { label: "PDF gemaakt op", value: new Date().toLocaleString("nl-NL", { dateStyle: "long", timeStyle: "short" }) },
+        ],
         filename: `adlytica-rapport-${snapshot.date_to || new Date().toISOString().slice(0, 10)}.pdf`,
       });
       setSaved(path);
