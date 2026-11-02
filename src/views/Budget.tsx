@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { analyticsQuery, num, fmt, Row } from "../lib/api";
 import { exportPdf, loadPdfBrand } from "../lib/pdf";
 import PdfResult from "../components/PdfResult";
+import Icon from "../components/Icon";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -215,10 +216,10 @@ export default function Budget({ accounts }: Props) {
         </label>
         <div className="grow" />
         <button className="ghost" onClick={() => setReloadKey((k) => k + 1)} disabled={loading}>
-          {loading ? "Vernieuwen…" : "↻ Vernieuwen"}
+          {loading ? "Vernieuwen…" : (<><Icon name="refresh" size={13} /> Vernieuwen</>)}
         </button>
         <button className="ghost" onClick={exportReport} disabled={pdfBusy || visible.length === 0}>
-          {pdfBusy ? "PDF…" : "⬇ PDF"}
+          {pdfBusy ? "PDF…" : (<><Icon name="download" size={13} /> PDF</>)}
         </button>
       </div>
       <PdfResult path={pdfPath} message={pdfMsg} onError={setError} />

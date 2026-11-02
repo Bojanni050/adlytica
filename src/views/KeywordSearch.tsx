@@ -3,6 +3,7 @@ import { analyticsQuery, num, fmt, Row, adlyChat } from "../lib/api";
 import { useDateRange } from "../lib/dateRange";
 import { exportPdf, loadPdfBrand } from "../lib/pdf";
 import PdfResult from "../components/PdfResult";
+import Icon from "../components/Icon";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -322,10 +323,10 @@ export default function KeywordSearch({ accounts }: Props) {
           {loading ? "Zoeken…" : "Zoeken"}
         </button>
         <button className="ghost" onClick={clusterRows} disabled={clustering || rows.length === 0}>
-          {clustering ? "Clusteren…" : "✦ Cluster met AI"}
+          {clustering ? "Clusteren…" : (<><Icon name="spark" size={13} /> Cluster met AI</>)}
         </button>
         <button className="ghost" onClick={exportReport} disabled={pdfBusy || visible.length === 0}>
-          {pdfBusy ? "PDF…" : "⬇ PDF"}
+          {pdfBusy ? "PDF…" : (<><Icon name="download" size={13} /> PDF</>)}
         </button>
       </div>
 

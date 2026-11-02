@@ -1,8 +1,11 @@
 import React, { useState } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
+  CartesianGrid, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { trendsQuery } from "../lib/api";
+import { CHART, SERIES_RAMP } from "../lib/chartTheme";
+
+const AXIS_TICK = { fill: CHART.axis, fontSize: CHART.tickFontSize, fontFamily: "Geist Mono, monospace" };
 
 interface TrendsPoint {
   date: string;
@@ -78,13 +81,24 @@ export default function Trends() {
         <div className="card chart-card" style={{ marginBottom: 20 }}>
           <h3>Zoekinteresse (0–100)</h3>
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={chartData}>
-              <XAxis dataKey="date" stroke="#8b98a8" fontSize={11} />
-              <YAxis stroke="#8b98a8" fontSize={11} domain={[0, 100]} />
-              <Tooltip contentStyle={{ background: "#151b23", border: "1px solid #273140" }} />
-              <Legend />
+            <LineChart data={chartData} aria-label="Zoekinteresse per zoekterm, 0 tot 100">
+              <CartesianGrid stroke={CHART.grid} vertical={false} />
+              <XAxis dataKey="date" tick={AXIS_TICK} axisLine={false} tickLine={false} minTickGap={30} />
+              <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} domain={[0, 100]} />
+              <Tooltip contentStyle={CHART.tooltip} cursor={{ stroke: CHART.cursorLine, strokeWidth: 1 }} />
+              {/* itemSorter={null}: houd de volgorde van de zoektermen aan zoals
+                  ze zijn ingevoerd in plaats van alfabetisch (Recharts 3-default). */}
+              <Legend wrapperStyle={CHART.legend} iconSize={7} iconType="plainline" itemSorter={null} />
               {kwList.map((kw, i) => (
-                <Line key={kw} type="monotone" dataKey={kw} stroke={["#f59e0b", "#10b981", "#fbbf24", "#f87171", "#34d399"][i % 5]} strokeWidth={2} dot={false} connectNulls />
+                <Line
+                  key={kw}
+                  type="monotone"
+                  dataKey={kw}
+                  stroke={SERIES_RAMP[i % SERIES_RAMP.length]}
+                  strokeWidth={1.75}
+                  dot={false}
+                  connectNulls
+                />
               ))}
             </LineChart>
           </ResponsiveContainer>

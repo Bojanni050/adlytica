@@ -7,18 +7,14 @@ import {
   Row, trackKeyword, untrackKeyword, analyticsQuery,
 } from "../lib/api";
 import { useDateRange } from "../lib/dateRange";
+import { CHART, SERIES } from "../lib/chartTheme";
+import Icon from "../components/Icon";
 
 interface Props { accounts: Record<string, string>; }
 
-const TOOLTIP_STYLE: React.CSSProperties = {
-  background: "#151b23",
-  border: "1px solid #273140",
-  borderRadius: 8,
-  fontSize: 12,
-  color: "#e6edf3",
-};
+const TOOLTIP_STYLE = CHART.tooltip;
 
-const AXIS_TICK = { fill: "#8b98a8", fontSize: 11 };
+const AXIS_TICK = { fill: CHART.axis, fontSize: CHART.tickFontSize, fontFamily: "Geist Mono, monospace" };
 
 /** Positie is beter als het getal lager is: 3 is beter dan 12. */
 function bestPosition(points: RankPoint[]): number | null {
@@ -61,7 +57,7 @@ function Sparkline({ points }: { points: RankPoint[] }) {
     .join(" ");
   return (
     <svg className="ranking-spark" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <polyline points={path} fill="none" stroke="#10b981" strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+      <polyline points={path} fill="none" stroke={SERIES.organic} strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
@@ -237,7 +233,9 @@ export default function Rankings({ accounts }: Props) {
             title="Posities verversen"
             aria-label="Posities verversen"
           >
-            <span className={busy ? "spin" : undefined}>↻</span>
+            <span className={busy ? "spin" : undefined} style={{ display: "inline-flex" }}>
+              <Icon name="refresh" size={14} />
+            </span>
           </button>
         </div>
       </div>
@@ -292,7 +290,21 @@ export default function Rankings({ accounts }: Props) {
                 <span className="ranking-keyword">{row.term}</span>
                 <span className="ranking-pos">{row.position === null ? "–" : fmt(row.position, 1)}</span>
                 <span className={`ranking-delta ${row.delta === null ? "" : row.delta < 0 ? "up" : row.delta > 0 ? "down" : ""}`}>
-                  {row.delta === null ? "nieuw" : `${row.delta < 0 ? "▲" : row.delta > 0 ? "▼" : "="} ${fmt(Math.abs(row.delta), 1)}`}
+                  {row.delta === null ? (
+                    "nieuw"
+                  ) : row.delta === 0 ? (
+                    `= ${fmt(0, 1)}`
+                  ) : (
+                    <>
+                      <Icon
+                        name={row.delta < 0 ? "arrowUp" : "arrowDown"}
+                        size={10}
+                        strokeWidth={1.8}
+                        style={{ display: "inline-block", verticalAlign: "-1px" }}
+                      />{" "}
+                      {fmt(Math.abs(row.delta), 1)}
+                    </>
+                  )}
                 </span>
                 <Sparkline points={row.points} />
                 <button
@@ -305,12 +317,12 @@ export default function Rankings({ accounts }: Props) {
                     void removeKeyword(row.term);
                   }}
                 >
-                  ✕
+                  <Icon name="close" size={11} />
                 </button>
               </div>
             ))}
             <p className="hint ranking-legend">
-              Positie nu · verschil met 7 dagen geleden (▲ is gestegen) · verloop
+              Positie nu · verschil met 7 dagen geleden (lager is beter) · verloop
             </p>
           </div>
 
@@ -323,12 +335,16 @@ export default function Rankings({ accounts }: Props) {
               <div className="widget-empty">Nog te weinig historie voor een grafiek</div>
             ) : (
               <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={chartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                  <CartesianGrid stroke="rgba(39, 49, 64, 0.6)" vertical={false} />
-                  <XAxis dataKey="date" tick={AXIS_TICK} stroke="#8b98a8" minTickGap={26} />
-                  <YAxis tick={AXIS_TICK} stroke="#8b98a8" reversed allowDecimals={false} domain={yDomain} ticks={yTicks} />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: "#8b98a8" }} />
-                  <Line type="monotone" dataKey="positie" stroke="#10b981" strokeWidth={2} dot={false} />
+                <LineChart
+                  data={chartData}
+                  margin={{ top: 8, right: 8, left: -18, bottom: 0 }}
+                  aria-label={`Positieverloop van ${selected ?? "de gekozen zoekterm"}`}
+                >
+                  <CartesianGrid stroke={CHART.grid} vertical={false} />
+                  <XAxis dataKey="date" tick={AXIS_TICK} axisLine={false} tickLine={false} minTickGap={30} />
+                  <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} reversed allowDecimals={false} domain={yDomain} ticks={yTicks} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color: CHART.axis }} cursor={{ stroke: CHART.cursorLine, strokeWidth: 1 }} />
+                  <Line type="monotone" dataKey="positie" stroke={SERIES.organic} strokeWidth={1.75} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             )}

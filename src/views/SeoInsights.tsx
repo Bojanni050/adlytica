@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { analyticsQuery, num, fmt, Row } from "../lib/api";
 import { useDateRange, shiftDate } from "../lib/dateRange";
+import Icon from "../components/Icon";
 
 interface Props {
   accounts: Record<string, string>;
@@ -326,7 +327,7 @@ export default function SeoInsights({ accounts }: Props) {
 
       <div className="toolbar">
         <button className="ghost" onClick={() => setReloadKey((key) => key + 1)} disabled={loading}>
-          {loading ? "Laden…" : "↻ Vernieuwen"}
+          {loading ? "Laden…" : (<><Icon name="refresh" size={13} /> Vernieuwen</>)}
         </button>
         {error && <span className="hint" style={{ color: "var(--danger)" }}>{error}</span>}
       </div>

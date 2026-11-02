@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useMemo, useState } from "react";
 import { dateNDaysAgo } from "./api";
+import Icon from "../components/Icon";
 
 export type DateRange = {
   from: string;
@@ -80,20 +81,52 @@ export function useDateRange(): DateRangeContextValue {
   return value;
 }
 
+/** Kort bereik-label voor in de topbalk: "12 aug – 9 nov". */
+const DAY_MONTH = new Intl.DateTimeFormat("nl-NL", { day: "numeric", month: "short" });
+
+function shortRange(from: string, to: string): string {
+  const start = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return `${from} – ${to}`;
+  return `${DAY_MONTH.format(start)} – ${DAY_MONTH.format(end)}`;
+}
+
 export function DateRangeSelector() {
   const { from, to, preset, setPreset, setCustom } = useDateRange();
   return (
-    <div className="global-date-range" role="group" aria-label="Datumbereik">
-      <span className="global-date-label">Periode</span>
-      {[7, 30, 90, 180].map((days) => (
-        <button key={days} type="button" className={preset === days ? "range-option active" : "range-option"} onClick={() => setPreset(days)} aria-pressed={preset === days}>{days}d</button>
-      ))}
-      <button type="button" className={preset === "custom" ? "range-option active" : "range-option"} onClick={() => setPreset("custom")} aria-pressed={preset === "custom"}>Aangepast</button>
-      {preset === "custom" && <>
-        <input aria-label="Vanaf" type="date" value={from} onChange={(e) => setCustom(e.target.value, to)} />
-        <span>–</span>
-        <input aria-label="Tot en met" type="date" value={to} onChange={(e) => setCustom(from, e.target.value)} />
-      </>}
+    <div className="global-date-range period" role="group" aria-label="Datumbereik">
+      <Icon name="calendar" size={14} className="period-icon" />
+      <div className="range-switch">
+        {[7, 30, 90, 180].map((days) => (
+          <button
+            key={days}
+            type="button"
+            className={preset === days ? "range-option active" : "range-option"}
+            onClick={() => setPreset(days)}
+            aria-pressed={preset === days}
+            title={`Laatste ${days} dagen`}
+          >
+            {days}d
+          </button>
+        ))}
+        <button
+          type="button"
+          className={preset === "custom" ? "range-option active" : "range-option"}
+          onClick={() => setPreset("custom")}
+          aria-pressed={preset === "custom"}
+        >
+          eigen
+        </button>
+      </div>
+      {preset === "custom" ? (
+        <div className="period-custom">
+          <input aria-label="Vanaf" type="date" value={from} onChange={(e) => setCustom(e.target.value, to)} />
+          <span>–</span>
+          <input aria-label="Tot en met" type="date" value={to} onChange={(e) => setCustom(from, e.target.value)} />
+        </div>
+      ) : (
+        <span className="global-date-label" style={{ letterSpacing: 0 }}>{shortRange(from, to)}</span>
+      )}
     </div>
   );
 }

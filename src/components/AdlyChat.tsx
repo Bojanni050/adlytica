@@ -4,6 +4,7 @@ import {
 } from "../lib/api";
 import { buildAdlySources } from "../lib/adlySources";
 import { useDateRange } from "../lib/dateRange";
+import Icon from "./Icon";
 
 interface Props {
   accounts: Record<string, string>;
@@ -299,8 +300,10 @@ export default function AdlyChat({ accounts, compact = false }: Props) {
       <div className="chat-window">
         {messages.length === 0 && (
           <div className="chat-empty">
-            <div style={{ fontSize: compact ? 24 : 28 }}>◉</div>
-            <p>Hoi! Ik ben Adly. Vraag me anything over je SEO of advertenties.</p>
+            <span className="chat-empty-mark">
+              <Icon name="spark" size={compact ? 22 : 26} strokeWidth={1.3} />
+            </span>
+            <p>Hoi! Ik ben Adly. Vraag me alles over je SEO en advertenties.</p>
             <div className="chat-suggestions">
               {SUGGESTIONS.map((s) => (
                 <button key={s} className="ghost" onClick={() => setInput(s)}>{s}</button>

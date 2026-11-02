@@ -5,6 +5,7 @@ import {
 import { exportPdf, loadPdfBrand } from "../lib/pdf";
 import PdfResult from "../components/PdfResult";
 import { useDateRange } from "../lib/dateRange";
+import Icon from "../components/Icon";
 
 type Filter = "all" | "error" | "warning" | "clean";
 
@@ -346,7 +347,7 @@ export default function Audit({ accounts }: { accounts: Record<string, string> }
           {busy ? "Bezig…" : "Start audit"}
         </button>
         <button className="ghost" onClick={exportReport} disabled={!result || pdfBusy}>
-          {pdfBusy ? "PDF…" : "⬇ PDF"}
+          {pdfBusy ? "PDF…" : (<><Icon name="download" size={13} /> PDF</>)}
         </button>
       </div>
 
@@ -641,7 +642,8 @@ export default function Audit({ accounts }: { accounts: Record<string, string> }
             </div>
             {focus && (
               <button className="range-option active" type="button" onClick={() => setFocus(null)}>
-                {focus} ✕
+                {focus}
+                <Icon name="close" size={11} />
               </button>
             )}
             <input
