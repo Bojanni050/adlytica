@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { savePdf } from "./api";
+import { getBrand, savePdf } from "./api";
 
 export interface PdfKpi { label: string; value: string }
 
@@ -14,8 +14,8 @@ export interface PdfSection {
 /** Extra regels op de voorpagina, bijvoorbeeld Periode of Bevroren op. */
 export interface PdfMeta { label: string; value: string }
 
-/** Wit-label: alleen naam en accentkleur, de rest houdt hetzelfde sjabloon. */
-export interface PdfBrand { name?: string; accent?: string; footer?: string }
+/** Wit-label: naam, accentkleur, voettekst en optioneel logo (data-URL). */
+export interface PdfBrand { name?: string; accent?: string; footer?: string; logo?: string | null }
 
 export interface PdfReport {
   title: string;
@@ -48,6 +48,45 @@ function parseHex(value?: string): Rgb | null {
 function oneLine(doc: jsPDF, text: string, maxWidth: number): string {
   const lines = doc.splitTextToSize(text, maxWidth) as string[];
   return lines[0] ?? "";
+}
+
+/**
+ * Merk uit Instellingen, zodat elk rapport dezelfde naam, kleur en voettekst
+ * heeft. Zonder wit-label (of zonder opslag) valt het sjabloon terug op Adlytica.
+ */
+export async function loadPdfBrand(): Promise<PdfBrand | undefined> {
+  try {
+    const brand = await getBrand();
+    if (!brand) return undefined;
+    return { name: brand.name, accent: brand.accent, footer: brand.footer, logo: brand.logo };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Logo linksboven op de voorpagina, met behoud van verhouding. Geeft false bij
+ * een vorm die jsPDF niet zelf kan tekenen (SVG); dan komt de merknaam in tekst.
+ */
+function drawLogo(
+  doc: jsPDF,
+  dataUrl: string | null | undefined,
+  x: number,
+  y: number,
+  maxWidth: number,
+  maxHeight: number
+): boolean {
+  if (!dataUrl || !dataUrl.startsWith("data:image/") || dataUrl.startsWith("data:image/svg")) return false;
+  try {
+    const props = doc.getImageProperties(dataUrl);
+    const scale = Math.min(maxWidth / props.width, maxHeight / props.height);
+    const width = props.width * scale;
+    const height = props.height * scale;
+    doc.addImage(dataUrl, x, y + (maxHeight - height) / 2, width, height);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Kolommen die volledig uit getallen, bedragen of percentages bestaan, rechts uitlijnen. */
@@ -90,11 +129,14 @@ export async function exportPdf(report: PdfReport): Promise<string> {
   doc.setFillColor(...accent);
   doc.rect(0, 0, pageWidth, 8, "F");
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setCharSpace(1.2);
-  doc.setTextColor(...accent);
-  doc.text(brandName, margin, 64);
+  const logoDrawn = drawLogo(doc, report.brand?.logo, margin, 34, 130, 26);
+  if (!logoDrawn) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setCharSpace(1.2);
+    doc.setTextColor(...accent);
+    doc.text(brandName, margin, 64);
+  }
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...MUTED);

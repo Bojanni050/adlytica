@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { analyticsQuery, num, fmt, Row } from "../lib/api";
-import { exportPdf } from "../lib/pdf";
+import { exportPdf, loadPdfBrand } from "../lib/pdf";
+import PdfResult from "../components/PdfResult";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -55,6 +56,7 @@ export default function Budget({ accounts }: Props) {
   const [reloadKey, setReloadKey] = useState(0);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfMsg, setPdfMsg] = useState<string | null>(null);
+  const [pdfPath, setPdfPath] = useState<string | null>(null);
   const [onlyActive, setOnlyActive] = useState(true);
   const month = useMemo(monthInfo, [reloadKey]);
 
@@ -134,6 +136,7 @@ export default function Budget({ accounts }: Props) {
       const path = await exportPdf({
         title: "Budget en pacing",
         subtitle: `${month.label} — dag ${month.day} van ${month.daysInMonth}`,
+        brand: await loadPdfBrand(),
         kpis: [
           { label: "Besteed deze maand", value: `€ ${fmt(totals.spend, 0)}` },
           { label: "Dagbudget samen", value: `€ ${fmt(totals.dailyBudget, 0)}` },
@@ -162,6 +165,7 @@ export default function Budget({ accounts }: Props) {
         ],
         filename: `adlytica-budget-${stamp}.pdf`,
       });
+      setPdfPath(path);
       setPdfMsg(`Opgeslagen: ${path}`);
     } catch (e) {
       setError(String(e));
@@ -217,7 +221,7 @@ export default function Budget({ accounts }: Props) {
           {pdfBusy ? "PDF…" : "⬇ PDF"}
         </button>
       </div>
-      {pdfMsg && <p className="hint" style={{ marginTop: 8 }}>{pdfMsg}</p>}
+      <PdfResult path={pdfPath} message={pdfMsg} onError={setError} />
 
       {loading ? (
         <div className="loading">Budgetten laden…</div>

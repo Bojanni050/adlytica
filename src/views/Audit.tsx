@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  runAudit, analyticsQuery, AuditPage, AuditResult, Row, openPath, revealPath,
+  runAudit, analyticsQuery, AuditPage, AuditResult, Row,
 } from "../lib/api";
-import { exportPdf } from "../lib/pdf";
+import { exportPdf, loadPdfBrand } from "../lib/pdf";
+import PdfResult from "../components/PdfResult";
 import { useDateRange } from "../lib/dateRange";
 
 type Filter = "all" | "error" | "warning" | "clean";
@@ -225,6 +226,7 @@ export default function Audit({ accounts }: { accounts: Record<string, string> }
       const path = await exportPdf({
         title: "Technische audit",
         subtitle: `${host} · ${result.crawled} pagina's · ${new Date().toLocaleDateString("nl-NL")}`,
+        brand: await loadPdfBrand(),
         kpis: [
           { label: "Health score", value: `${result.score}${delta === null ? "" : ` (${delta >= 0 ? "+" : ""}${delta})`}` },
           { label: "Fouten", value: String(totals.errors) },
@@ -307,21 +309,7 @@ export default function Audit({ accounts }: { accounts: Record<string, string> }
           De crawler haalt de pagina's op. Bij 100 pagina's duurt dit ongeveer een halve minuut.
         </p>
       )}
-      {pdfMsg && (
-        <p className="hint">
-          {pdfMsg}{" "}
-          {pdfPath && (
-            <>
-              <button className="ghost" onClick={() => openPath(pdfPath).catch((e) => setError(String(e)))}>
-                PDF openen
-              </button>{" "}
-              <button className="ghost" onClick={() => revealPath(pdfPath).catch((e) => setError(String(e)))}>
-                Map openen
-              </button>
-            </>
-          )}
-        </p>
-      )}
+      <PdfResult path={pdfPath} message={pdfMsg} onError={setError} />
       {error && <p className="hint" style={{ color: "var(--danger)" }}>{error}</p>}
 
       {!result && !busy && (

@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { analyticsQuery, num, fmt, Row, adlyChat } from "../lib/api";
 import { useDateRange } from "../lib/dateRange";
-import { exportPdf } from "../lib/pdf";
+import { exportPdf, loadPdfBrand } from "../lib/pdf";
+import PdfResult from "../components/PdfResult";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -78,6 +79,7 @@ export default function KeywordSearch({ accounts }: Props) {
   const [activeCluster, setActiveCluster] = useState<string | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfMsg, setPdfMsg] = useState<string | null>(null);
+  const [pdfPath, setPdfPath] = useState<string | null>(null);
   const [positions, setPositions] = useState<Record<string, SiteHit>>({});
   const [gapLoading, setGapLoading] = useState(false);
   const [gapFilter, setGapFilter] = useState<GapFilter>("all");
@@ -200,6 +202,7 @@ export default function KeywordSearch({ accounts }: Props) {
         subtitle: mode === "gsc"
           ? `Search Console · laatste 90 dagen${term.trim() ? ` · filter "${term.trim()}"` : ""}`
           : `Keyword Planner${seeds.trim() ? ` · ${seeds.trim()}` : ""}`,
+        brand: await loadPdfBrand(),
         kpis:
           mode === "gsc"
             ? [
@@ -246,6 +249,7 @@ export default function KeywordSearch({ accounts }: Props) {
         ],
         filename: `adlytica-keywords-${stamp}.pdf`,
       });
+      setPdfPath(path);
       setPdfMsg(`Opgeslagen: ${path}`);
     } catch (e) {
       setError(String(e));
@@ -327,7 +331,7 @@ export default function KeywordSearch({ accounts }: Props) {
 
       {error && <div className="error-box">{error}</div>}
       {clusterError && <div className="error-box">{clusterError}</div>}
-      {pdfMsg && <p className="hint">{pdfMsg}</p>}
+      <PdfResult path={pdfPath} message={pdfMsg} onError={setError} />
 
       {clusters.length > 0 && (
         <>

@@ -3,7 +3,8 @@ import {
   analyticsQuery, num, fmt, Row, ReportSnapshot,
   getReportSnapshots, saveReportSnapshot, deleteReportSnapshot,
 } from "../lib/api";
-import { exportPdf, PdfKpi, PdfMeta, PdfSection } from "../lib/pdf";
+import { exportPdf, loadPdfBrand, PdfKpi, PdfMeta, PdfSection } from "../lib/pdf";
+import PdfResult from "../components/PdfResult";
 import { useDateRange } from "../lib/dateRange";
 
 interface Block {
@@ -313,6 +314,7 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
       const path = await exportPdf({
         title: title.trim() || "SEO-rapport",
         subtitle: `Laatste ${days} dagen · ${new Date().toLocaleDateString("nl-NL")}`,
+        brand: await loadPdfBrand(),
         kpis,
         sections,
         meta: periodMeta(from, to),
@@ -332,6 +334,7 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
       const path = await exportPdf({
         title: snapshot.title,
         subtitle: `Bevroren rapport · de cijfers zoals ze op ${formatMoment(snapshot.created_at)} waren`,
+        brand: await loadPdfBrand(),
         kpis: snapshot.kpis,
         sections: snapshot.sections.map((section) => ({
           title: section.title,
@@ -413,7 +416,7 @@ export default function Reports({ accounts }: { accounts: Record<string, string>
         </div>
       </div>
 
-      {saved && <p className="hint">Opgeslagen: {saved}</p>}
+      <PdfResult path={saved} onError={setError} />
       {snapshotMsg && <p className="hint">{snapshotMsg}</p>}
       {error && <p className="hint" style={{ color: "var(--danger)" }}>{error}</p>}
 
