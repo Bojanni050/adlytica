@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
-  analyticsQuery, analyticsAction, num, fmt, Row,
+  analyticsQuery, num, fmt, Row,
   adsApplyChange, getChangeLog, ChangeLogEntry,
 } from "../lib/api";
 import { useDateRange } from "../lib/dateRange";
@@ -201,7 +201,12 @@ export default function Campaigns({ accounts }: Props) {
         </button>
       </div>
 
-      {showCreate && <CreateCampaignForm accounts={accounts} onCreated={() => { setShowCreate(false); loadCampaigns(); }} />}
+      {showCreate && (
+        <CreateCampaignForm
+          onLogged={setLog}
+          onCreated={() => { setShowCreate(false); loadCampaigns(); }}
+        />
+      )}
 
       {loading ? (
         <div className="loading">Campagnes laden…</div>
@@ -260,7 +265,12 @@ export default function Campaigns({ accounts }: Props) {
   );
 }
 
-function CreateCampaignForm({ accounts, onCreated }: { accounts: Record<string, string>; onCreated: () => void }) {
+function CreateCampaignForm({
+  onCreated, onLogged,
+}: {
+  onCreated: () => void;
+  onLogged: (log: ChangeLogEntry[]) => void;
+}) {
   const [name, setName] = useState("");
   const [budget, setBudget] = useState("10");
   const [channel, setChannel] = useState("search");
@@ -269,47 +279,130 @@ function CreateCampaignForm({ accounts, onCreated }: { accounts: Record<string, 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<"campaign" | "adgroup">("campaign");
+  const [confirming, setConfirming] = useState<"campaign" | "adgroup" | null>(null);
   const [campaignId, setCampaignId] = useState<string | null>(null);
   const [agName, setAgName] = useState("");
   const [agCpc, setAgCpc] = useState("1.00");
-  const [adHeadlines, setAdHeadlines] = useState<string[]>(["", "", ""]);
-  const [adDescriptions, setAdDescriptions] = useState<string[]>(["", ""]);
-  const [adUrl, setAdUrl] = useState("https://white-vision.nl/");
+
+  const budgetEuro = Number.parseFloat(budget.replace(",", "."));
+  const cpcEuro = Number.parseFloat(agCpc.replace(",", "."));
+
+  function askCampaign() {
+    setError(null);
+    if (name.trim() === "") { setError("Geef de campagne eerst een naam."); return; }
+    if (!Number.isFinite(budgetEuro) || budgetEuro <= 0) { setError("Vul een dagbudget groter dan nul in."); return; }
+    setConfirming("campaign");
+  }
+
+  function askAdGroup() {
+    setError(null);
+    if (agName.trim() === "") { setError("Geef de ad group eerst een naam."); return; }
+    if (!Number.isFinite(cpcEuro) || cpcEuro <= 0) { setError("Vul een maximum CPC groter dan nul in."); return; }
+    setConfirming("adgroup");
+  }
 
   async function createCampaign() {
     setBusy(true); setError(null);
     try {
-      const result = (await analyticsAction("google_ads", accounts.google_ads, "create_campaign", {
-        name, channel_type: channel, bidding_strategy: bidding,
-        budget_amount_micros: Math.round(parseFloat(budget) * 1_000_000),
-        status,
-      })) as Record<string, unknown>;
-      const id = String(result?.campaign_id ?? result?.id ?? "");
-      setCampaignId(id);
+      const result = await adsApplyChange(
+        "create_campaign",
+        {
+          name: name.trim(), channel_type: channel, bidding_strategy: bidding,
+          budget_amount_micros: Math.round(budgetEuro * 1_000_000), status,
+        },
+        `Campagne ${name.trim()} aanmaken`,
+      );
+      onLogged(result.log);
+      if (result.entry.status === "mislukt") {
+        setError(result.entry.message ?? "De service heeft de campagne niet aangemaakt.");
+        setConfirming(null);
+        setBusy(false);
+        return;
+      }
+      const payload = (result.result ?? {}) as Record<string, unknown>;
+      setCampaignId(String(payload.campaign_id ?? payload.id ?? ""));
+      setConfirming(null);
       setStep("adgroup");
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); setConfirming(null); }
     setBusy(false);
   }
 
   async function createAdGroup() {
-    if (!campaignId) return;
+    if (!campaignId) {
+      setError("De campagne-id ontbreekt; maak de campagne opnieuw aan.");
+      return;
+    }
     setBusy(true); setError(null);
     try {
-      await analyticsAction("google_ads", accounts.google_ads, "create_ad_group", {
-        campaign_id: campaignId, name: agName,
-        cpc_bid_micros: Math.round(parseFloat(agCpc) * 1_000_000),
-        status: "paused",
-      });
+      const result = await adsApplyChange(
+        "create_ad_group",
+        {
+          campaign_id: campaignId, name: agName.trim(),
+          cpc_bid_micros: Math.round(cpcEuro * 1_000_000), status: "paused",
+        },
+        `Ad group ${agName.trim()} aanmaken`,
+      );
+      onLogged(result.log);
+      if (result.entry.status === "mislukt") {
+        setError(result.entry.message ?? "De ad group is niet aangemaakt.");
+        setConfirming(null);
+        setBusy(false);
+        return;
+      }
       onCreated();
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(String(e)); setConfirming(null); }
     setBusy(false);
   }
+
+  const biddingLabel = {
+    manual_cpc: "Manual CPC",
+    maximize_conversions: "Maximize Conversions",
+    target_spend: "Target Spend",
+  }[bidding] ?? bidding;
 
   return (
     <div className="card" style={{ marginBottom: 20 }}>
       <h3>{step === "campaign" ? "Stap 1: Campagne aanmaken" : "Stap 2: Ad group aanmaken"}</h3>
       {error && <div className="error-box">{error}</div>}
-      {step === "campaign" ? (
+
+      {confirming === "campaign" && (
+        <div style={{ border: "1px solid var(--accent)", borderRadius: 10, padding: 14, marginBottom: 4 }}>
+          <h4 style={{ marginTop: 0, marginBottom: 8 }}>Dit gaat er naar Google Ads</h4>
+          <ul className="hint" style={{ margin: "0 0 10px 18px" }}>
+            <li>Naam: {name.trim()}</li>
+            <li>Dagbudget: € {budgetEuro.toFixed(2)}</li>
+            <li>Kanaal: {channel === "search" ? "Search" : "Display"}</li>
+            <li>Biedstrategie: {biddingLabel}</li>
+            <li>Status: {status === "enabled" ? "direct actief" : "gepauzeerd"}</li>
+          </ul>
+          <p className="hint">
+            Aanmaken kun je niet via de app terugdraaien; verwijderen doe je in Google Ads. De actie komt wel in het logboek.
+          </p>
+          <button className="primary" onClick={createCampaign} disabled={busy}>
+            {busy ? "Aanmaken…" : "Nu aanmaken"}
+          </button>{" "}
+          <button className="ghost" onClick={() => setConfirming(null)} disabled={busy}>Terug</button>
+        </div>
+      )}
+
+      {confirming === "adgroup" && (
+        <div style={{ border: "1px solid var(--accent)", borderRadius: 10, padding: 14, marginBottom: 4 }}>
+          <h4 style={{ marginTop: 0, marginBottom: 8 }}>Dit gaat er naar Google Ads</h4>
+          <ul className="hint" style={{ margin: "0 0 10px 18px" }}>
+            <li>Campagne-id: {campaignId || "onbekend"}</li>
+            <li>Ad group: {agName.trim()}</li>
+            <li>Max CPC: € {cpcEuro.toFixed(2)}</li>
+            <li>Status: gepauzeerd</li>
+          </ul>
+          <p className="hint">Ook dit is niet via de app terug te draaien, maar het staat wel in het logboek.</p>
+          <button className="primary" onClick={createAdGroup} disabled={busy}>
+            {busy ? "Aanmaken…" : "Nu aanmaken"}
+          </button>{" "}
+          <button className="ghost" onClick={() => setConfirming(null)} disabled={busy}>Terug</button>
+        </div>
+      )}
+
+      {!confirming && (step === "campaign" ? (
         <>
           <div className="form-row">
             <div><label className="field">Naam</label>
@@ -335,13 +428,13 @@ function CreateCampaignForm({ accounts, onCreated }: { accounts: Record<string, 
                 <option value="enabled">Direct actief</option>
               </select></div>
           </div>
-          <button className="primary" onClick={createCampaign} disabled={busy || !name || !budget}>
-            {busy ? "Aanmaken…" : "Campagne aanmaken"}
+          <button className="primary" onClick={askCampaign} disabled={busy || !name || !budget}>
+            Controleren
           </button>
         </>
       ) : (
         <>
-          <p className="hint">Campagne aangemaakt (ID: {campaignId}). Voeg eventueel direct een ad group toe.</p>
+          <p className="hint">Campagne aangemaakt (ID: {campaignId || "onbekend"}). Voeg eventueel direct een ad group toe.</p>
           <div className="form-row">
             <div><label className="field">Ad group naam</label>
               <input type="text" value={agName} onChange={(e) => setAgName(e.target.value)} placeholder="bijv. DU-Instrumenten" /></div>
@@ -350,12 +443,12 @@ function CreateCampaignForm({ accounts, onCreated }: { accounts: Record<string, 
           </div>
           <div className="form-row">
             <button className="ghost" onClick={onCreated}>Overslaan</button>
-            <button className="primary" onClick={createAdGroup} disabled={busy || !agName}>
-              {busy ? "Aanmaken…" : "Ad group aanmaken"}
+            <button className="primary" onClick={askAdGroup} disabled={busy || !agName}>
+              Controleren
             </button>
           </div>
         </>
-      )}
+      ))}
     </div>
   );
 }

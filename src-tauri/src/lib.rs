@@ -413,7 +413,13 @@ fn delete_report_snapshot(
 
 /// Wijzigingen die de app zelf in Google Ads mag doorvoeren. Bewust kort:
 /// alles wat niet veilig te previewen of terug te draaien is, staat er niet in.
-const ADS_ALLOWED_ACTIONS: [&str; 3] = ["pause_campaign", "enable_campaign", "push_negative_keywords"];
+const ADS_ALLOWED_ACTIONS: [&str; 5] = [
+    "pause_campaign",
+    "enable_campaign",
+    "push_negative_keywords",
+    "create_campaign",
+    "create_ad_group",
+];
 /// Bovengrens per dag, geteld uit het logboek. Een verkeerd gelopen script of
 /// een dubbelklik mag nooit tientallen campagnes omzetten.
 const ADS_DAILY_LIMIT: usize = 20;
@@ -423,6 +429,9 @@ const MAX_NEGATIVE_KEYWORDS: usize = 50;
 pub struct AdsActionResult {
     entry: config::ChangeLogEntry,
     log: Vec<config::ChangeLogEntry>,
+    /// Ruwe reactie van de service, zodat de aanroeper een nieuwe campagne-id
+    /// kan uitlezen zonder een tweede query te doen.
+    result: serde_json::Value,
 }
 
 /// Elke wijziging is terug te draaien door precies de omgekeerde actie.
@@ -443,10 +452,64 @@ fn campaign_id_of(params: &serde_json::Value) -> &str {
         .unwrap_or("")
 }
 
+fn text_param(params: &serde_json::Value, key: &str) -> String {
+    params
+        .get(key)
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .unwrap_or("")
+        .to_string()
+}
+
+fn number_param(params: &serde_json::Value, key: &str) -> f64 {
+    params
+        .get(key)
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0)
+}
+
 fn validate_ads_params(action: &str, params: &serde_json::Value) -> Result<(), String> {
-    if campaign_id_of(params).is_empty() {
-        return Err("Deze wijziging hoort bij een campagne; campagne-id ontbreekt.".into());
+    match action {
+        "create_campaign" => {
+            let name = text_param(params, "name");
+            if name.is_empty() {
+                return Err("Geef de campagne een naam.".into());
+            }
+            if name.chars().count() > 200 {
+                return Err("De campagnenaam is te lang (maximaal 200 tekens).".into());
+            }
+            if number_param(params, "budget_amount_micros") <= 0.0 {
+                return Err("Het dagbudget moet groter dan nul zijn.".into());
+            }
+        }
+        "create_ad_group" => {
+            if campaign_id_of(params).is_empty() {
+                return Err("De ad group hoort bij een campagne; campagne-id ontbreekt.".into());
+            }
+            let name = text_param(params, "name");
+            if name.is_empty() {
+                return Err("Geef de ad group een naam.".into());
+            }
+            if name.chars().count() > 200 {
+                return Err("De ad group-naam is te lang (maximaal 200 tekens).".into());
+            }
+            if number_param(params, "cpc_bid_micros") <= 0.0 {
+                return Err("Het maximum CPC moet groter dan nul zijn.".into());
+            }
+        }
+        _ => {
+            if campaign_id_of(params).is_empty() {
+                return Err("Deze wijziging hoort bij een campagne; campagne-id ontbreekt.".into());
+            }
+        }
     }
+
+    if let Some(status) = params.get("status").and_then(|value| value.as_str()) {
+        if status != "paused" && status != "enabled" {
+            return Err("Status moet \"paused\" of \"enabled\" zijn.".into());
+        }
+    }
+
     if action == "push_negative_keywords" {
         let keywords = params
             .get("keywords")
@@ -540,6 +603,7 @@ async fn ads_apply_change(
         .execute_action("google_ads", &account, &action, &params)
         .await;
     persist_refreshed_creds(&state, &client);
+    let result = outcome.as_ref().ok().cloned().unwrap_or(serde_json::Value::Null);
 
     let at = analytics::utc_now_iso();
     let entry = config::ChangeLogEntry {
@@ -574,7 +638,7 @@ async fn ads_apply_change(
         clean
     };
     persist(&state);
-    Ok(AdsActionResult { entry, log })
+    Ok(AdsActionResult { entry, log, result })
 }
 
 #[tauri::command]

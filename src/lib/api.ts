@@ -69,6 +69,8 @@ export interface ChangeLogEntry {
 export interface AdsActionResult {
   entry: ChangeLogEntry;
   log: ChangeLogEntry[];
+  /** Ruwe reactie van de service (bijv. het id van een nieuwe campagne). */
+  result: unknown;
 }
 
 export async function getChangeLog(): Promise<ChangeLogEntry[]> {
