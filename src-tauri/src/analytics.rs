@@ -201,13 +201,29 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (y, m as u32, d as u32)
 }
 
-fn today_utc() -> String {
+pub(crate) fn today_utc() -> String {
     let days = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64 / 86_400)
         .unwrap_or(0);
     let (y, m, d) = civil_from_days(days);
     format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// Volledige UTC-tijd als ISO-8601, zonder extra dependency.
+pub(crate) fn utc_now_iso() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
+    let rest = secs.rem_euclid(86_400);
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        rest / 3600,
+        (rest % 3600) / 60,
+        rest % 60
+    )
 }
 
 pub struct AnalyticsClient {

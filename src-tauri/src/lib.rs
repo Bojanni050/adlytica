@@ -46,6 +46,8 @@ pub struct AppState {
     pub query_cache: Mutex<analytics::QueryCache>,
     /// Bevroren rapporten; nieuwste eerst.
     pub reports: Mutex<Vec<config::ReportSnapshot>>,
+    /// Logboek van wijzigingen in Google Ads (met undo-mogelijkheid).
+    pub change_log: Mutex<Vec<config::ChangeLogEntry>>,
     pub trends: trends::TrendsState,
 }
 
@@ -78,6 +80,7 @@ fn persist(state: &AppState) {
     let alerts = state.alerts.lock().unwrap().clone();
     let actions = state.actions.lock().unwrap().clone();
     let reports = state.reports.lock().unwrap().clone();
+    let change_log = state.change_log.lock().unwrap().clone();
     let cfg = config::AppConfig {
         analytics_base_url,
         analytics_access_token: present(creds.access_token.clone()),
@@ -99,6 +102,7 @@ fn persist(state: &AppState) {
         alerts,
         actions,
         reports,
+        change_log,
     };
     if let Err(e) = config::save(&cfg) {
         eprintln!("Config niet opgeslagen: {e}");
@@ -405,6 +409,172 @@ fn delete_report_snapshot(
     };
     persist(&state);
     Ok(clean)
+}
+
+/// Wijzigingen die de app zelf in Google Ads mag doorvoeren. Bewust kort:
+/// alles wat niet veilig te previewen of terug te draaien is, staat er niet in.
+const ADS_ALLOWED_ACTIONS: [&str; 3] = ["pause_campaign", "enable_campaign", "push_negative_keywords"];
+/// Bovengrens per dag, geteld uit het logboek. Een verkeerd gelopen script of
+/// een dubbelklik mag nooit tientallen campagnes omzetten.
+const ADS_DAILY_LIMIT: usize = 20;
+const MAX_NEGATIVE_KEYWORDS: usize = 50;
+
+#[derive(serde::Serialize)]
+pub struct AdsActionResult {
+    entry: config::ChangeLogEntry,
+    log: Vec<config::ChangeLogEntry>,
+}
+
+/// Elke wijziging is terug te draaien door precies de omgekeerde actie.
+fn undo_action(action: &str) -> Option<&'static str> {
+    match action {
+        "pause_campaign" => Some("enable_campaign"),
+        "enable_campaign" => Some("pause_campaign"),
+        _ => None,
+    }
+}
+
+fn campaign_id_of(params: &serde_json::Value) -> &str {
+    params
+        .get("campaign_id")
+        .or_else(|| params.get("campaignId"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .unwrap_or("")
+}
+
+fn validate_ads_params(action: &str, params: &serde_json::Value) -> Result<(), String> {
+    if campaign_id_of(params).is_empty() {
+        return Err("Deze wijziging hoort bij een campagne; campagne-id ontbreekt.".into());
+    }
+    if action == "push_negative_keywords" {
+        let keywords = params
+            .get("keywords")
+            .and_then(|value| value.as_array())
+            .ok_or_else(|| "Geen zoektermen opgegeven.".to_string())?;
+        let clean: Vec<&str> = keywords
+            .iter()
+            .filter_map(|keyword| keyword.as_str())
+            .map(str::trim)
+            .filter(|keyword| !keyword.is_empty())
+            .collect();
+        if clean.is_empty() {
+            return Err("Geen zoektermen opgegeven.".into());
+        }
+        if clean.len() > MAX_NEGATIVE_KEYWORDS {
+            return Err(format!("Maximaal {MAX_NEGATIVE_KEYWORDS} zoektermen per keer."));
+        }
+        if clean.iter().any(|keyword| keyword.chars().count() > 80) {
+            return Err("Een zoekterm is te lang (maximaal 80 tekens).".into());
+        }
+    }
+    Ok(())
+}
+
+fn make_change_id() -> String {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    format!("ads-{millis}")
+}
+
+#[tauri::command]
+fn get_change_log(state: State<'_, AppState>) -> Vec<config::ChangeLogEntry> {
+    state.change_log.lock().unwrap().clone()
+}
+
+/// Voert één wijziging uit, maar alleen binnen de whitelist, met een
+/// daglimiet en met een logboekregel — ook als de aanroep mislukt.
+#[tauri::command]
+async fn ads_apply_change(
+    action: String,
+    params: serde_json::Value,
+    title: String,
+    undo_of: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<AdsActionResult, String> {
+    if !ADS_ALLOWED_ACTIONS.contains(&action.as_str()) {
+        return Err(format!("Deze wijziging ({action}) is niet toegestaan vanuit de app."));
+    }
+    validate_ads_params(&action, &params)?;
+
+    if let Some(original_id) = undo_of.as_deref() {
+        let original_action = {
+            let log = state.change_log.lock().unwrap();
+            log.iter()
+                .find(|entry| entry.id == original_id)
+                .map(|entry| entry.action.clone())
+        };
+        let Some(original_action) = original_action else {
+            return Err("Die wijziging staat niet (meer) in het logboek.".into());
+        };
+        if undo_action(&original_action) != Some(action.as_str()) {
+            return Err("Deze actie hoort niet bij het ongedaan maken van die wijziging.".into());
+        }
+    }
+
+    let account = {
+        let accounts = state.accounts.lock().unwrap();
+        accounts.get("google_ads").cloned().unwrap_or_default()
+    };
+    if account.trim().is_empty() {
+        return Err("Stel eerst een Google Ads-account in bij Instellingen.".into());
+    }
+
+    let today = analytics::today_utc();
+    let used = {
+        let log = state.change_log.lock().unwrap();
+        log.iter()
+            .filter(|entry| entry.at.starts_with(&today) && entry.status != "mislukt")
+            .count()
+    };
+    if used >= ADS_DAILY_LIMIT {
+        return Err(format!(
+            "Daglimiet van {ADS_DAILY_LIMIT} wijzigingen bereikt. Probeer het morgen weer."
+        ));
+    }
+
+    let client = analytics_client(&state)?;
+    let outcome = client
+        .execute_action("google_ads", &account, &action, &params)
+        .await;
+    persist_refreshed_creds(&state, &client);
+
+    let at = analytics::utc_now_iso();
+    let entry = config::ChangeLogEntry {
+        id: make_change_id(),
+        at,
+        connector: "google_ads".into(),
+        account,
+        action: action.clone(),
+        title: if title.trim().is_empty() { action.clone() } else { title.trim().to_string() },
+        params,
+        status: if outcome.is_ok() { "uitgevoerd".into() } else { "mislukt".into() },
+        message: outcome.as_ref().err().map(|error| error.to_string()),
+        undone_by: None,
+        undo_of,
+    };
+
+    let log = {
+        let mut log = state.change_log.lock().unwrap();
+        if outcome.is_ok() {
+            if let Some(original_id) = entry.undo_of.as_deref() {
+                for existing in log.iter_mut() {
+                    if existing.id == original_id {
+                        existing.undone_by = Some(entry.id.clone());
+                        existing.status = "teruggedraaid".into();
+                    }
+                }
+            }
+        }
+        log.insert(0, entry.clone());
+        let clean = config::sanitized_changes(log.clone());
+        *log = clean.clone();
+        clean
+    };
+    persist(&state);
+    Ok(AdsActionResult { entry, log })
 }
 
 #[tauri::command]
@@ -833,6 +1003,7 @@ async fn dataforseo_gap(
                 alerts: Mutex::new(cfg.alerts.clone().sanitized()),
                 actions: Mutex::new(config::sanitized_actions(cfg.actions.clone())),
                 reports: Mutex::new(config::sanitized_reports(cfg.reports.clone())),
+                change_log: Mutex::new(config::sanitized_changes(cfg.change_log.clone())),
                 query_cache: Mutex::new(analytics::QueryCache::default()),
                 trends: trends::TrendsState {
                     sidecar: Mutex::new(None),
@@ -876,6 +1047,8 @@ async fn dataforseo_gap(
             get_report_snapshots,
             save_report_snapshot,
             delete_report_snapshot,
+            get_change_log,
+            ads_apply_change,
             notify_now,
             test_notification,
             set_dataforseo,

@@ -1,10 +1,20 @@
 import React, { useEffect, useState } from "react";
 import {
   analyticsQuery, analyticsAction, num, fmt, Row,
+  adsApplyChange, getChangeLog, ChangeLogEntry,
 } from "../lib/api";
 import { useDateRange } from "../lib/dateRange";
+import AdsChangeLog from "../components/AdsChangeLog";
 
 interface Props { accounts: Record<string, string>; }
+
+interface PendingChange {
+  action: string;
+  params: Record<string, unknown>;
+  title: string;
+  summary: string;
+  undoable: boolean;
+}
 
 interface CampaignRow {
   id: string;
@@ -23,6 +33,11 @@ export default function Campaigns({ accounts }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [log, setLog] = useState<ChangeLogEntry[]>([]);
+  const [pending, setPending] = useState<PendingChange | null>(null);
+  const [changing, setChanging] = useState(false);
+  const [negativesFor, setNegativesFor] = useState<CampaignRow | null>(null);
+  const [negText, setNegText] = useState("");
 
   async function loadCampaigns() {
     setLoading(true);
@@ -57,13 +72,71 @@ export default function Campaigns({ accounts }: Props) {
 
   useEffect(() => { loadCampaigns(); /* eslint-disable-next-line */ }, [accounts, from, to]);
 
-  async function toggleCampaign(c: CampaignRow, action: "pause_campaign" | "enable_campaign") {
+  async function loadLog() {
     try {
-      await analyticsAction("google_ads", accounts.google_ads, action, { campaign_id: c.id });
-      setNotice(`Campaign "${c.name}" ${action === "pause_campaign" ? "gepauzeerd" : "geactiveerd"}.`);
+      setLog(await getChangeLog());
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  useEffect(() => { loadLog(); }, []);
+
+  // Pauzeren en activeren gaan via een bevestiging: eerst zien wat er gebeurt,
+  // dan pas versturen. Zo legt een misklik geen campagne stil of start hij geen
+  // kosten.
+  function askToggle(c: CampaignRow, action: "pause_campaign" | "enable_campaign") {
+    const pausing = action === "pause_campaign";
+    setPending({
+      action,
+      params: { campaign_id: c.id },
+      title: `Campagne "${c.name}" ${pausing ? "pauzeren" : "activeren"}`,
+      summary: pausing
+        ? `Campagne "${c.name}" gaat van ENABLED naar PAUSED. Google Ads stopt dan met het leveren van advertenties in deze campagne.`
+        : `Campagne "${c.name}" gaat van PAUSED naar ENABLED. Google Ads levert daarna weer advertenties en maakt kosten.`,
+      undoable: true,
+    });
+  }
+
+  function askNegatives(c: CampaignRow) {
+    const keywords = negText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 50);
+    if (keywords.length === 0) {
+      setError("Vul minstens één zoekterm in, één per regel.");
+      return;
+    }
+    setPending({
+      action: "push_negative_keywords",
+      params: { campaign_id: c.id, keywords },
+      title: `Negative keywords voor "${c.name}"`,
+      summary: `${keywords.length} zoekterm(en) worden als negative keyword op campagneniveau toegevoegd: ${keywords.join(", ")}.`,
+      undoable: false,
+    });
+  }
+
+  async function confirmPending() {
+    if (!pending || changing) return;
+    setChanging(true);
+    setError(null);
+    try {
+      const result = await adsApplyChange(pending.action, pending.params, pending.title);
+      setLog(result.log);
+      if (result.entry.status === "mislukt") {
+        setError(result.entry.message ?? "De wijziging is niet gelukt.");
+      } else {
+        setNotice(`${pending.title} — doorgevoerd.`);
+        setNegativesFor(null);
+        setNegText("");
+      }
+      setPending(null);
       loadCampaigns();
     } catch (e) {
       setError(String(e));
+    } finally {
+      setChanging(false);
     }
   }
 
@@ -76,6 +149,50 @@ export default function Campaigns({ accounts }: Props) {
       {notice && <div className="card" style={{ borderColor: "var(--accent-2)", marginBottom: 16 }}>
         <span style={{ color: "var(--accent-2)" }}>{notice}</span>
       </div>}
+
+      {negativesFor && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <h3>Negative keywords voor {negativesFor.name}</h3>
+          <p className="hint">
+            Eén zoekterm per regel, maximaal 50. Ze worden op campagneniveau toegevoegd; via de app
+            zijn ze daarna niet meer te verwijderen.
+          </p>
+          <textarea
+            rows={6}
+            value={negText}
+            onChange={(event) => setNegText(event.target.value)}
+            placeholder={"bijv.\ngratis zwembad\nzwembad huren"}
+          />
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button className="primary" onClick={() => askNegatives(negativesFor)}>
+              Controleren
+            </button>
+            <button className="ghost" onClick={() => { setNegativesFor(null); setNegText(""); }}>
+              Annuleren
+            </button>
+          </div>
+        </div>
+      )}
+
+      {pending && (
+        <div className="card" style={{ marginBottom: 16, borderColor: "var(--accent)" }}>
+          <h3>Controleren en bevestigen</h3>
+          <p style={{ margin: "0 0 8px" }}>{pending.summary}</p>
+          <p className="hint">
+            {pending.undoable
+              ? "Je kunt deze wijziging daarna in het logboek ongedaan maken."
+              : "Let op: dit kan niet via de app ongedaan worden gemaakt."}
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="primary" onClick={confirmPending} disabled={changing}>
+              {changing ? "Bezig…" : "Nu doorvoeren"}
+            </button>
+            <button className="ghost" onClick={() => setPending(null)} disabled={changing}>
+              Annuleren
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="toolbar">
         <div className="grow" />
@@ -117,10 +234,18 @@ export default function Campaigns({ accounts }: Props) {
                   <td className="num">{fmt(c.conversions, 0)}</td>
                   <td>
                     {c.status.toUpperCase() === "ENABLED" ? (
-                      <button className="ghost" onClick={() => toggleCampaign(c, "pause_campaign")}>Pauzeren</button>
+                      <button className="ghost" onClick={() => askToggle(c, "pause_campaign")}>Pauzeren</button>
                     ) : c.status.toUpperCase() === "PAUSED" ? (
-                      <button className="ghost" onClick={() => toggleCampaign(c, "enable_campaign")}>Activeren</button>
-                    ) : null}
+                      <button className="ghost" onClick={() => askToggle(c, "enable_campaign")}>Activeren</button>
+                    ) : null}{" "}
+                    {c.status.toUpperCase() !== "REMOVED" && (
+                      <button
+                        className="ghost"
+                        onClick={() => { setNegativesFor(c); setNegText(""); setPending(null); }}
+                      >
+                        Negative keywords
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -129,6 +254,8 @@ export default function Campaigns({ accounts }: Props) {
           {campaigns.length === 0 && <p className="hint" style={{ padding: 12 }}>Geen campagnes gevonden.</p>}
         </div>
       )}
+
+      <AdsChangeLog entries={log} onChanged={setLog} onError={setError} />
     </div>
   );
 }

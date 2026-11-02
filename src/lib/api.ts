@@ -51,6 +51,48 @@ export async function analyticsAction(
   return invoke("analytics_action", { connector, account, action, params: params ?? {} });
 }
 
+/** Eén uitgevoerde (of mislukte) wijziging in Google Ads. */
+export interface ChangeLogEntry {
+  id: string;
+  at: string;
+  connector: string;
+  account: string;
+  action: string;
+  title: string;
+  params: Record<string, unknown>;
+  status: "uitgevoerd" | "teruggedraaid" | "mislukt";
+  message: string | null;
+  undone_by: string | null;
+  undo_of: string | null;
+}
+
+export interface AdsActionResult {
+  entry: ChangeLogEntry;
+  log: ChangeLogEntry[];
+}
+
+export async function getChangeLog(): Promise<ChangeLogEntry[]> {
+  return invoke<ChangeLogEntry[]>("get_change_log");
+}
+
+/**
+ * Voert een Ads-wijziging uit via de beveiligde route: de backend controleert
+ * de actie, de daglimiet en (bij undo) of de omkering klopt, en logt alles.
+ */
+export async function adsApplyChange(
+  action: string,
+  params: Record<string, unknown>,
+  title: string,
+  undoOf?: string
+): Promise<AdsActionResult> {
+  return invoke<AdsActionResult>("ads_apply_change", {
+    action,
+    params,
+    title,
+    undoOf: undoOf ?? null,
+  });
+}
+
 /** Bewaart de databron (service-URL + token) en de account-ID's. */
 export async function setAnalyticsConfig(
   baseUrl: string,

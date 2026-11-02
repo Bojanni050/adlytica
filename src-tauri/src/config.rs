@@ -59,6 +59,9 @@ pub struct AppConfig {
     /// Bevroren rapporten: de cijfers zoals ze op het moment van bewaren waren.
     #[serde(default)]
     pub reports: Vec<ReportSnapshot>,
+    /// Logboek van wijzigingen die de app in Google Ads heeft doorgevoerd.
+    #[serde(default)]
+    pub change_log: Vec<ChangeLogEntry>,
 }
 
 /// Instelbare drempels voor de drie dashboard-alerts.
@@ -364,6 +367,94 @@ fn default_mistral_model() -> String {
     "mistral-small-latest".into()
 }
 
+/// Eén uitgevoerde wijziging in Google Ads (of een poging daartoe).
+///
+/// Bewust een logboek in plaats van een verborgen geschiedenis: de gebruiker
+/// moet kunnen zien wat de app heeft aangepast, wat er misging en wat er is
+/// teruggedraaid.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct ChangeLogEntry {
+    pub id: String,
+    /// Moment van uitvoeren (ISO-8601, UTC).
+    #[serde(default)]
+    pub at: String,
+    #[serde(default = "default_connector")]
+    pub connector: String,
+    #[serde(default)]
+    pub account: String,
+    pub action: String,
+    /// Korte omschrijving voor in de lijst, bijv. "Campagne X pauzeren".
+    #[serde(default)]
+    pub title: String,
+    /// Wat er precies is verstuurd (campagne-id, zoekwoorden, bedrag).
+    #[serde(default)]
+    pub params: serde_json::Value,
+    /// "uitgevoerd", "teruggedraaid" of "mislukt".
+    #[serde(default = "default_change_status")]
+    pub status: String,
+    /// Foutmelding of toelichting van de service.
+    #[serde(default)]
+    pub message: Option<String>,
+    /// Id van de wijziging waarmee deze is teruggedraaid.
+    #[serde(default)]
+    pub undone_by: Option<String>,
+    /// Id van de wijziging die deze poging terugdraait.
+    #[serde(default)]
+    pub undo_of: Option<String>,
+}
+
+fn default_connector() -> String {
+    "google_ads".into()
+}
+
+fn default_change_status() -> String {
+    "uitgevoerd".into()
+}
+
+pub const CHANGE_STATUSES: [&str; 3] = ["uitgevoerd", "teruggedraaid", "mislukt"];
+const MAX_CHANGES: usize = 500;
+
+/// Houdt het wijzigingslogboek bruikbaar: geen lege regels, alleen bekende
+/// statussen en een harde bovengrens. Een logregel zonder titel blijft staan
+/// (met de actienaam als titel), want het logboek mag geen gaten krijgen.
+pub fn sanitized_changes(entries: Vec<ChangeLogEntry>) -> Vec<ChangeLogEntry> {
+    fn trim_to(value: &str, max: usize) -> String {
+        value.trim().chars().take(max).collect()
+    }
+
+    entries
+        .into_iter()
+        .filter_map(|mut entry| {
+            entry.id = trim_to(&entry.id, 64);
+            entry.action = trim_to(&entry.action, 60);
+            if entry.id.is_empty() || entry.action.is_empty() {
+                return None;
+            }
+            entry.at = trim_to(&entry.at, 40);
+            entry.connector = {
+                let value = trim_to(&entry.connector, 40);
+                if value.is_empty() { default_connector() } else { value }
+            };
+            entry.account = trim_to(&entry.account, 80);
+            entry.title = {
+                let value = trim_to(&entry.title, 200);
+                if value.is_empty() { entry.action.clone() } else { value }
+            };
+            if !entry.params.is_object() {
+                entry.params = serde_json::Value::Null;
+            }
+            if !CHANGE_STATUSES.contains(&entry.status.as_str()) {
+                entry.status = default_change_status();
+            }
+            entry.message = entry.message.map(|m| trim_to(&m, 500)).filter(|m| !m.is_empty());
+            entry.undone_by = entry.undone_by.map(|v| trim_to(&v, 64)).filter(|v| !v.is_empty());
+            entry.undo_of = entry.undo_of.map(|v| trim_to(&v, 64)).filter(|v| !v.is_empty());
+            Some(entry)
+        })
+        .take(MAX_CHANGES)
+        .collect()
+}
+
 fn default_python_path() -> String {
     "python3".into()
 }
@@ -391,6 +482,7 @@ impl Default for AppConfig {
             alerts: AlertSettings::default(),
             actions: Vec::new(),
             reports: Vec::new(),
+            change_log: Vec::new(),
         }
     }
 }
@@ -561,6 +653,7 @@ mod tests {
         let cfg: AppConfig = serde_json::from_str(text).expect("oude config moet leesbaar blijven");
         assert!(cfg.actions.is_empty());
         assert!(cfg.reports.is_empty());
+        assert!(cfg.change_log.is_empty());
     }
 
     #[test]
@@ -604,5 +697,42 @@ mod tests {
         assert_eq!(opgeschoond[0].title, "SEO-rapport");
         assert_eq!(opgeschoond[0].sections.len(), 1, "sectie zonder titel vervalt");
         assert_eq!(opgeschoond[0].sections[0].rows[0][0], "/zwembaden");
+    }
+
+    #[test]
+    fn wijzigingen_worden_opgeschoond() {
+        let opgeschoond = sanitized_changes(vec![
+            ChangeLogEntry {
+                id: "c1".into(),
+                at: "2026-11-02T09:00:00Z".into(),
+                connector: "   ".into(),
+                account: "307-043-6491".into(),
+                action: "pause_campaign".into(),
+                title: "  Campagne pauzeren  ".into(),
+                params: serde_json::json!({ "campaign_id": "123" }),
+                status: "bestaat-niet".into(),
+                message: None,
+                undone_by: None,
+                undo_of: None,
+            },
+            ChangeLogEntry {
+                id: String::new(),
+                at: String::new(),
+                connector: "google_ads".into(),
+                account: String::new(),
+                action: "pause_campaign".into(),
+                title: String::new(),
+                params: serde_json::Value::Null,
+                status: String::new(),
+                message: None,
+                undone_by: None,
+                undo_of: None,
+            },
+        ]);
+        assert_eq!(opgeschoond.len(), 1, "regel zonder id hoort te vervallen");
+        assert_eq!(opgeschoond[0].title, "Campagne pauzeren");
+        assert_eq!(opgeschoond[0].status, "uitgevoerd");
+        assert_eq!(opgeschoond[0].connector, "google_ads");
+        assert!(opgeschoond[0].params.is_object());
     }
 }
