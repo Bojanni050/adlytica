@@ -515,6 +515,45 @@ export interface SiteCheck {
   detail: string;
 }
 
+export interface AiCrawlerResult {
+  bot: string;
+  robots_blocked: boolean;
+  sampled: number;
+  blocked: number;
+  challenged: number;
+  different_title: number;
+  thinner: number;
+  js_only: number;
+  notes: string[];
+}
+
+export interface SitemapReport {
+  found: boolean;
+  urls: number;
+  not_found: string[];
+  redirected: string[];
+  missing_from_crawl: string[];
+  missing_from_crawl_total: number;
+  not_in_sitemap: string[];
+}
+
+export interface CrawlTrap {
+  pattern: string;
+  label: string;
+  robots: string;
+  count: number;
+  examples: string[];
+}
+
+export interface CrawlBudget {
+  total: number;
+  with_params: number;
+  param_share_pct: number;
+  traps: CrawlTrap[];
+  soft_404: string[];
+  advice: string[];
+}
+
 export interface AuditResult {
   base: string;
   pages: AuditPage[];
@@ -528,6 +567,9 @@ export interface AuditResult {
   links: LinkFinding[];
   orphans: string[];
   checks: SiteCheck[];
+  ai_crawlers: AiCrawlerResult[];
+  sitemap: SitemapReport;
+  crawl_budget: CrawlBudget;
   previous: PreviousRun | null;
 }
 

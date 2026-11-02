@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  runAudit, analyticsQuery, AuditPage, AuditResult, Row,
+  runAudit, analyticsQuery, AuditPage, AuditResult, AiCrawlerResult, Row,
 } from "../lib/api";
 import { exportPdf, loadPdfBrand } from "../lib/pdf";
 import PdfResult from "../components/PdfResult";
@@ -51,6 +51,16 @@ function healthColor(score: number): string {
   if (score >= 80) return "var(--accent-2)";
   if (score >= 60) return "var(--warn)";
   return "var(--danger)";
+}
+
+/** Zelfde samenvatting als de backend maakt, maar dan op de al geserialiseerde velden. */
+function botSummary(bot: AiCrawlerResult): string {
+  if (bot.robots_blocked) return `${bot.bot} is geblokkeerd in robots.txt.`;
+  if (bot.blocked > 0) return `kreeg ${bot.blocked} van ${bot.sampled} pagina's niet binnen`;
+  if (bot.challenged > 0) return "stuitte op een CDN-challenge";
+  if (bot.thinner > 0 || bot.js_only > 0) return "krijgt minder inhoud dan een gewone bezoeker";
+  if (bot.different_title > 0) return "ziet een andere titel";
+  return "ziet dezelfde pagina's.";
 }
 
 function impactLabel(impact: string): string {
@@ -249,6 +259,42 @@ export default function Audit({ accounts }: { accounts: Record<string, string> }
             rows: result.checks.map((check) => [check.label, check.ok ? "in orde" : "actie", check.detail]),
           },
           {
+            title: "AI-crawlers",
+            head: ["Bot", "robots.txt", "Opgehaald", "Wat hij ziet"],
+            rows: result.ai_crawlers.map((bot) => [
+              bot.bot,
+              bot.robots_blocked ? "geblokkeerd" : "toegestaan",
+              `${bot.sampled - bot.blocked}/${bot.sampled}`,
+              botSummary(bot),
+            ]),
+          },
+          {
+            title: "Sitemap",
+            head: ["Controle", "Aantal", "Voorbeelden"],
+            rows: [
+              ["URL's in de sitemap", result.sitemap.found ? result.sitemap.urls : 0, result.sitemap.found ? "" : "geen sitemap gevonden"],
+              ["Niet bereikbaar", result.sitemap.not_found.length, result.sitemap.not_found.slice(0, 5).join(", ")],
+              ["Met een redirect", result.sitemap.redirected.length, result.sitemap.redirected.slice(0, 5).join(", ")],
+              ["Niet gecrawld", result.sitemap.missing_from_crawl_total, result.sitemap.missing_from_crawl.slice(0, 5).join(", ")],
+              ["Niet in de sitemap", result.sitemap.not_in_sitemap.length, result.sitemap.not_in_sitemap.slice(0, 5).join(", ")],
+            ],
+          },
+          {
+            title: "Crawl-budget",
+            head: ["Patroon", "Wat het is", "Keer gezien"],
+            rows: result.crawl_budget.traps.length > 0
+              ? result.crawl_budget.traps.map((trap) => [trap.pattern, trap.label, trap.count])
+              : [["—", "Geen crawl-traps gevonden", result.crawl_budget.with_params]],
+            note: `${result.crawl_budget.with_params} van ${result.crawl_budget.total} URL's heeft queryparameters (${result.crawl_budget.param_share_pct}%).`,
+          },
+          {
+            title: "Aanbevolen robots.txt",
+            head: ["Regel"],
+            rows: result.crawl_budget.advice.length > 0
+              ? result.crawl_budget.advice.map((line) => [line])
+              : [["Geen aanbevelingen — het crawl-budget is in orde."]],
+          },
+          {
             title: "Pagina's",
             head: ["Pagina", "Status", "Health", "Klikken", "Bevindingen"],
             rows: pages.slice(0, 80),
@@ -381,6 +427,175 @@ export default function Audit({ accounts }: { accounts: Record<string, string> }
               {result.failed > 0 ? ` · ${result.failed} niet opgehaald` : ""}
               {result.truncated ? " · crawl afgekapt op de limiet" : ""}
             </span>
+          </div>
+
+          {result.ai_crawlers.length > 0 && (
+            <>
+              <h3 className="audit-section">AI-crawlers</h3>
+              <div className="card">
+                <p className="hint" style={{ marginTop: 0 }}>
+                  Dezelfde pagina's, opgevraagd met de user-agent van elke bot. Zo zie je of
+                  ChatGPT, Perplexity en OpenAI's zoekbot je site net zo goed lezen als Google.
+                </p>
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>Bot</th>
+                      <th>robots.txt</th>
+                      <th>Opgehaald</th>
+                      <th>Wat hij ziet</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.ai_crawlers.map((bot) => (
+                      <tr key={bot.bot}>
+                        <td>{bot.bot}</td>
+                        <td>
+                          {bot.robots_blocked
+                            ? <span className="badge red">geblokkeerd</span>
+                            : <span className="badge green">toegestaan</span>}
+                        </td>
+                        <td className="num">
+                          {bot.sampled - bot.blocked}/{bot.sampled}
+                        </td>
+                        <td>
+                          {bot.robots_blocked || bot.blocked + bot.challenged + bot.different_title + bot.thinner + bot.js_only > 0
+                            ? <span className="badge yellow">{botSummary(bot)}</span>
+                            : <span className="badge green">{botSummary(bot)}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {result.ai_crawlers.some((bot) => bot.notes.length > 0) && (
+                  <ul className="audit-list" style={{ marginTop: 10 }}>
+                    {result.ai_crawlers.flatMap((bot) =>
+                      bot.notes.map((note, index) => (
+                        <li key={`${bot.bot}-${index}`}><strong>{bot.bot}</strong> — {note}</li>
+                      ))
+                    )}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
+
+          <h3 className="audit-section">Sitemap</h3>
+          <div className="card">
+            {!result.sitemap.found ? (
+              <p className="hint" style={{ margin: 0 }}>
+                Geen sitemap gevonden. Zonder sitemap moet Google je pagina's via links vinden;
+                dat kost meer tijd en laat losse pagina's sneller buiten beeld.
+              </p>
+            ) : (
+              <>
+                <p className="hint" style={{ marginTop: 0 }}>
+                  {result.sitemap.urls} URL's in de sitemap, vergeleken met wat de crawler vond.
+                </p>
+                {result.sitemap.not_found.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <strong style={{ color: "var(--danger)" }}>In de sitemap maar niet bereikbaar ({result.sitemap.not_found.length})</strong>
+                    <ul className="audit-list">
+                      {result.sitemap.not_found.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {result.sitemap.redirected.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <strong style={{ color: "var(--warn)" }}>In de sitemap maar met een redirect ({result.sitemap.redirected.length})</strong>
+                    <ul className="audit-list">
+                      {result.sitemap.redirected.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {result.sitemap.missing_from_crawl_total > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <strong>In de sitemap maar niet gecrawld ({result.sitemap.missing_from_crawl_total})</strong>
+                    <ul className="audit-list">
+                      {result.sitemap.missing_from_crawl.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                    {result.sitemap.missing_from_crawl_total > result.sitemap.missing_from_crawl.length && (
+                      <p className="hint" style={{ margin: 0 }}>
+                        {result.sitemap.missing_from_crawl_total - result.sitemap.missing_from_crawl.length} meer — verhoog de paginalimiet om ze mee te nemen.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {result.sitemap.not_in_sitemap.length > 0 && (
+                  <div>
+                    <strong>Gecrawld maar niet in de sitemap ({result.sitemap.not_in_sitemap.length})</strong>
+                    <ul className="audit-list">
+                      {result.sitemap.not_in_sitemap.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {result.sitemap.not_found.length === 0 &&
+                  result.sitemap.redirected.length === 0 &&
+                  result.sitemap.missing_from_crawl_total === 0 &&
+                  result.sitemap.not_in_sitemap.length === 0 && (
+                    <p className="hint" style={{ margin: 0 }}>Sitemap en crawl komen overeen.</p>
+                  )}
+              </>
+            )}
+          </div>
+
+          <h3 className="audit-section">Crawl-budget</h3>
+          <div className="card">
+            <p className="hint" style={{ marginTop: 0 }}>
+              {result.crawl_budget.with_params} van {result.crawl_budget.total} URL's
+              ({result.crawl_budget.param_share_pct}%) heeft queryparameters. Hoe meer varianten
+              van dezelfde pagina, hoe meer crawlbudget er aan dubbele inhoud opgaat.
+            </p>
+            {result.crawl_budget.traps.length > 0 ? (
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Patroon</th>
+                    <th>Wat het is</th>
+                    <th>Keer gezien</th>
+                    <th>Voorbeeld</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.crawl_budget.traps.map((trap) => (
+                    <tr key={trap.pattern}>
+                      <td><code>{trap.pattern}</code></td>
+                      <td>{trap.label}</td>
+                      <td className="num">{trap.count}</td>
+                      <td className="hint">{trap.examples[0] ?? ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="hint" style={{ margin: 0 }}>Geen URL-patronen gevonden die op een crawl-trap lijken.</p>
+            )}
+            {result.crawl_budget.soft_404.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <strong style={{ color: "var(--warn)" }}>Soft-404's</strong>
+                <ul className="audit-list">
+                  {result.crawl_budget.soft_404.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </div>
+            )}
+            {result.crawl_budget.advice.length > 0 && (
+              <>
+                <strong style={{ display: "block", marginTop: 12 }}>Aanbevolen robots.txt-regels</strong>
+                <pre
+                  style={{
+                    background: "var(--panel-2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: 10,
+                    fontSize: 12,
+                    overflowX: "auto",
+                    margin: "8px 0 0",
+                  }}
+                >
+                  {result.crawl_budget.advice.join("\n")}
+                </pre>
+              </>
+            )}
           </div>
 
           <h3 className="audit-section">Taken ({sortedTasks.length})</h3>

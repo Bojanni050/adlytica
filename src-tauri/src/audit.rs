@@ -13,6 +13,13 @@ const USER_AGENT: &str = "Adlytica/0.1 (technische SEO-audit)";
 const CONCURRENCY: usize = 6;
 const MAX_LINK_CHECKS: usize = 150;
 const KEEP_RUNS: usize = 20;
+/// Hoeveel pagina's per AI-crawler worden opgevraagd. Klein houden: elke bot
+/// kost één request per pagina en de steekproef moet de audit niet vertragen.
+const AI_SAMPLE_PAGES: usize = 6;
+const MAX_EXAMPLES: usize = 3;
+const SOFT_404_PROBES: usize = 2;
+/// Een patroon geldt pas als trap vanaf dit aantal treffers in de crawl.
+const TRAP_MIN_HITS: usize = 3;
 
 #[derive(Serialize, Clone)]
 pub struct AuditIssue {
@@ -81,6 +88,83 @@ pub struct SiteCheck {
     pub detail: String,
 }
 
+/// Wat één AI-crawler te zien krijgt als hij de steekproefpagina's ophaalt.
+#[derive(Serialize)]
+pub struct AiCrawlerResult {
+    pub bot: String,
+    pub robots_blocked: bool,
+    pub sampled: usize,
+    pub blocked: usize,
+    pub challenged: usize,
+    pub different_title: usize,
+    pub thinner: usize,
+    pub js_only: usize,
+    pub notes: Vec<String>,
+}
+
+impl AiCrawlerResult {
+    fn has_problems(&self) -> bool {
+        self.robots_blocked
+            || self.blocked > 0
+            || self.challenged > 0
+            || self.different_title > 0
+            || self.thinner > 0
+            || self.js_only > 0
+    }
+
+    fn summary(&self) -> String {
+        if self.robots_blocked {
+            return format!("{} is geblokkeerd in robots.txt.", self.bot);
+        }
+        if self.blocked > 0 {
+            return format!("{} kreeg {} van {} pagina's niet binnen.", self.bot, self.blocked, self.sampled);
+        }
+        if self.challenged > 0 {
+            return format!("{} stuitte op een CDN-challenge ({} van {}).", self.bot, self.challenged, self.sampled);
+        }
+        if self.js_only > 0 || self.thinner > 0 {
+            return format!("{} krijgt minder inhoud dan een gewone bezoeker.", self.bot);
+        }
+        if self.different_title > 0 {
+            return format!("{} ziet een andere titel dan een gewone bezoeker.", self.bot);
+        }
+        format!("{} ziet dezelfde pagina's.", self.bot)
+    }
+}
+
+/// Vergelijking tussen de sitemap en wat de crawl daadwerkelijk tegenkwam.
+#[derive(Serialize)]
+pub struct SitemapReport {
+    pub found: bool,
+    pub urls: usize,
+    pub not_found: Vec<String>,
+    pub redirected: Vec<String>,
+    pub missing_from_crawl: Vec<String>,
+    pub missing_from_crawl_total: usize,
+    pub not_in_sitemap: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct CrawlTrap {
+    pub pattern: String,
+    pub label: String,
+    pub robots: String,
+    pub count: usize,
+    pub examples: Vec<String>,
+}
+
+/// Hoeveel van de crawl uit parametervarianten bestaat en welke patronen zich
+/// als URL-trap gedragen.
+#[derive(Serialize)]
+pub struct CrawlBudget {
+    pub total: usize,
+    pub with_params: usize,
+    pub param_share_pct: f64,
+    pub traps: Vec<CrawlTrap>,
+    pub soft_404: Vec<String>,
+    pub advice: Vec<String>,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PreviousRun {
     pub at: String,
@@ -104,6 +188,9 @@ pub struct AuditResult {
     pub links: Vec<LinkFinding>,
     pub orphans: Vec<String>,
     pub checks: Vec<SiteCheck>,
+    pub ai_crawlers: Vec<AiCrawlerResult>,
+    pub sitemap: SitemapReport,
+    pub crawl_budget: CrawlBudget,
     pub previous: Option<PreviousRun>,
 }
 
@@ -253,6 +340,334 @@ fn extract_locs(xml: &str) -> Vec<String> {
         rest = &after[end..];
     }
     out
+}
+
+/// De user-agents waarmee AI-crawlers langskomen. Googlebot zit erbij als
+/// ijkpunt: ziet die hetzelfde als de AI-bots, dan is er niets aan de hand.
+struct AiBot {
+    name: &'static str,
+    agent: &'static str,
+}
+
+const AI_BOTS: [AiBot; 5] = [
+    AiBot {
+        name: "Googlebot",
+        agent: "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    },
+    AiBot {
+        name: "GPTBot",
+        agent: "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.2; +https://openai.com/gptbot",
+    },
+    AiBot {
+        name: "OAI-SearchBot",
+        agent: "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; OAI-SearchBot/1.0; +https://openai.com/searchbot",
+    },
+    AiBot {
+        name: "PerplexityBot",
+        agent: "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot",
+    },
+    AiBot {
+        name: "CCBot",
+        agent: "CCBot/2.0 (https://commoncrawl.org/faq/)",
+    },
+];
+
+/// Patronen die in de praktijk crawl-budget opeten. Het derde veld is meteen
+/// de regel die je in robots.txt kunt zetten.
+const TRAP_PATTERNS: [(&str, &str, &str); 8] = [
+    ("?e-page-", "Elementor-paginering", "Disallow: /*?e-page-"),
+    ("?replytocom=", "Reacties", "Disallow: /*?replytocom="),
+    ("?s=", "Zoekresultaten", "Disallow: /*?s="),
+    ("?preview=", "Voorbeeldweergave", "Disallow: /*?preview="),
+    ("?orderby=", "Sortering", "Disallow: /*?orderby="),
+    ("?filter_", "WooCommerce-filters", "Disallow: /*?filter_"),
+    ("?add-to-cart=", "Winkelwagen", "Disallow: /*?add-to-cart="),
+    ("?p=", "WordPress-ID's", "Disallow: /*?p="),
+];
+
+fn path_of(url: &str) -> String {
+    Url::parse(url)
+        .map(|parsed| {
+            let mut path = parsed.path().to_string();
+            if let Some(query) = parsed.query() {
+                path.push('?');
+                path.push_str(query);
+            }
+            path
+        })
+        .unwrap_or_else(|_| url.to_string())
+}
+
+fn shorten(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    text.chars().take(max.saturating_sub(1)).collect::<String>() + "…"
+}
+
+fn epoch_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|value| value.as_secs())
+        .unwrap_or(0)
+}
+
+/// Leest robots.txt en zegt of deze bot volledig buiten de deur wordt gehouden.
+/// Alleen een `Disallow: /` in een groep die voor deze bot geldt telt: losse
+/// uitsluitingen zoals `/wp-admin` blokkeren de site niet.
+fn robots_blocks(body: &str, bot: &str) -> bool {
+    let bot = bot.to_lowercase();
+    let mut applies = false;
+    let mut blocked = false;
+    for raw in body.lines() {
+        let line = raw.split('#').next().unwrap_or("").trim().to_lowercase();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("user-agent:") {
+            let agent = rest.trim();
+            applies = agent == "*" || agent == bot || (!agent.is_empty() && bot.contains(agent));
+            continue;
+        }
+        if !applies {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("disallow:") {
+            let value = rest.trim();
+            if value == "/" || value == "/*" {
+                blocked = true;
+            }
+        }
+    }
+    blocked
+}
+
+/// Vraagt de steekproefpagina's op als Googlebot en als de AI-crawlers, en
+/// vergelijkt wat zij krijgen met wat een gewone bezoeker kreeg.
+async fn check_ai_crawlers(pages: &[AuditPage], home: &str, robots: &str) -> Vec<AiCrawlerResult> {
+    let mut sample: Vec<String> = Vec::new();
+    if let Some(page) = pages.iter().find(|p| normalize(&p.url) == normalize(home)) {
+        sample.push(page.url.clone());
+    }
+    let mut ranked: Vec<&AuditPage> = pages
+        .iter()
+        .filter(|p| p.status == 200 && !p.redirect)
+        .collect();
+    ranked.sort_by(|a, b| b.inbound.cmp(&a.inbound).then(b.words.cmp(&a.words)));
+    for page in ranked {
+        if sample.len() >= AI_SAMPLE_PAGES {
+            break;
+        }
+        if sample.iter().any(|url| normalize(url) == normalize(&page.url)) {
+            continue;
+        }
+        sample.push(page.url.clone());
+    }
+
+    let mut results: Vec<AiCrawlerResult> = Vec::new();
+    for bot in AI_BOTS.iter() {
+        let client = reqwest::Client::builder()
+            .user_agent(bot.agent)
+            .timeout(Duration::from_secs(20))
+            .redirect(reqwest::redirect::Policy::limited(8))
+            .build()
+            .unwrap_or_default();
+        let mut blocked = 0usize;
+        let mut challenged = 0usize;
+        let mut different_title = 0usize;
+        let mut thinner = 0usize;
+        let mut js_only = 0usize;
+        let mut notes: Vec<String> = Vec::new();
+
+        for url in &sample {
+            let baseline = pages.iter().find(|p| normalize(&p.url) == normalize(url));
+            let fetched = match get(&client, url).await {
+                Ok(fetched) => fetched,
+                Err(error) => {
+                    blocked += 1;
+                    if notes.len() < MAX_EXAMPLES {
+                        notes.push(format!("{} mislukte op {}: {}", bot.name, path_of(url), shorten(&error, 80)));
+                    }
+                    continue;
+                }
+            };
+            if fetched.status >= 400 {
+                blocked += 1;
+                if notes.len() < MAX_EXAMPLES {
+                    notes.push(format!("{} kreeg status {} op {}", bot.name, fetched.status, path_of(url)));
+                }
+                continue;
+            }
+            let lower = fetched.body.to_lowercase();
+            let challenge = lower.contains("just a moment")
+                || lower.contains("cf-challenge")
+                || lower.contains("attention required")
+                || lower.contains("enable javascript and cookies to continue");
+            if challenge {
+                challenged += 1;
+                if notes.len() < MAX_EXAMPLES {
+                    notes.push(format!("CDN-challenge op {}", path_of(url)));
+                }
+                continue;
+            }
+
+            let document = Html::parse_document(&fetched.body);
+            let title = document
+                .select(&selector("title"))
+                .next()
+                .map(|element| clean(&element.text().collect::<String>()))
+                .unwrap_or_default();
+            let words = content_text(&document).split_whitespace().count();
+
+            let Some(reference) = baseline else { continue };
+            if !reference.title.is_empty()
+                && !title.is_empty()
+                && normalize(&title.to_lowercase()) != normalize(&reference.title.to_lowercase())
+            {
+                different_title += 1;
+                if notes.len() < MAX_EXAMPLES {
+                    notes.push(format!("andere title op {}: \"{}\"", path_of(url), shorten(&title, 60)));
+                }
+            }
+            if reference.words > 100 && words * 100 < reference.words * 60 {
+                thinner += 1;
+                if notes.len() < MAX_EXAMPLES {
+                    notes.push(format!(
+                        "dunnere pagina op {}: {} woorden in plaats van {}",
+                        path_of(url),
+                        words,
+                        reference.words
+                    ));
+                }
+            }
+            if reference.words > 150 && words < 40 {
+                js_only += 1;
+            }
+        }
+
+        results.push(AiCrawlerResult {
+            bot: bot.name.to_string(),
+            robots_blocked: robots_blocks(robots, bot.name),
+            sampled: sample.len(),
+            blocked,
+            challenged,
+            different_title,
+            thinner,
+            js_only,
+            notes,
+        });
+    }
+    results
+}
+
+/// Vergelijkt de sitemap met wat de crawl heeft opgehaald.
+fn build_sitemap_report(sitemap: &[String], pages: &[AuditPage]) -> SitemapReport {
+    let sitemap_set: HashSet<String> = sitemap.iter().map(|url| normalize(url)).collect();
+    let crawled: HashSet<String> = pages.iter().map(|page| normalize(&page.url)).collect();
+
+    let mut not_found: Vec<String> = Vec::new();
+    let mut redirected: Vec<String> = Vec::new();
+    for page in pages {
+        if !sitemap_set.contains(&normalize(&page.url)) {
+            continue;
+        }
+        if page.status >= 400 {
+            not_found.push(format!("{} ({})", page.url, page.status));
+        } else if page.redirect {
+            redirected.push(format!("{} → {}", page.url, page.final_url));
+        }
+    }
+
+    let mut missing_from_crawl: Vec<String> = sitemap
+        .iter()
+        .filter(|url| !crawled.contains(&normalize(url)))
+        .cloned()
+        .collect();
+    missing_from_crawl.sort();
+    let missing_from_crawl_total = missing_from_crawl.len();
+    missing_from_crawl.truncate(50);
+
+    let mut not_in_sitemap: Vec<String> = pages
+        .iter()
+        .filter(|page| !sitemap_set.contains(&normalize(&page.url)))
+        .map(|page| page.url.clone())
+        .collect();
+    not_in_sitemap.sort();
+    not_in_sitemap.truncate(50);
+
+    SitemapReport {
+        found: !sitemap.is_empty(),
+        urls: sitemap.len(),
+        not_found,
+        redirected,
+        missing_from_crawl,
+        missing_from_crawl_total,
+        not_in_sitemap,
+    }
+}
+
+/// Telt parametervarianten en herkent bekende URL-traps.
+fn build_crawl_budget(urls: &[String], soft_404: Vec<String>) -> CrawlBudget {
+    let total = urls.len();
+    let with_params = urls
+        .iter()
+        .filter(|url| Url::parse(url).map(|parsed| parsed.query().is_some()).unwrap_or(false))
+        .count();
+    let param_share_pct = if total == 0 {
+        0.0
+    } else {
+        (with_params as f64) * 100.0 / (total as f64)
+    };
+
+    let mut traps: Vec<CrawlTrap> = Vec::new();
+    for (pattern, label, robots) in TRAP_PATTERNS {
+        let hits: Vec<&String> = urls
+            .iter()
+            .filter(|url| url.to_lowercase().contains(pattern))
+            .collect();
+        if hits.len() < TRAP_MIN_HITS {
+            continue;
+        }
+        let examples: Vec<String> = hits.iter().take(MAX_EXAMPLES).map(|url| path_of(url)).collect();
+        traps.push(CrawlTrap {
+            pattern: pattern.to_string(),
+            label: label.to_string(),
+            robots: robots.to_string(),
+            count: hits.len(),
+            examples,
+        });
+    }
+    traps.sort_by(|a, b| b.count.cmp(&a.count));
+
+    let mut advice: Vec<String> = traps.iter().map(|trap| trap.robots.clone()).collect();
+    if param_share_pct >= 20.0 {
+        advice.push("# Meer dan 20% van de gevonden URL's is een parametervariant.".to_string());
+    }
+
+    CrawlBudget {
+        total,
+        with_params,
+        param_share_pct: (param_share_pct * 10.0).round() / 10.0,
+        traps,
+        soft_404,
+        advice,
+    }
+}
+
+/// Vraagt twee verzonnen paden op. Krijg je daar 200 op terug, dan bestaat er
+/// geen echte 404 en crawlt Google eindeloos door op alles wat op een pagina lijkt.
+async fn soft_404_probes(client: &reqwest::Client, base: &Url) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for index in 0..SOFT_404_PROBES {
+        let path = format!("/adlytica-bestaat-niet-{}-{}", index + 1, epoch_secs());
+        let Ok(url) = base.join(&path) else { continue };
+        if let Ok(fetched) = get(client, url.as_str()).await {
+            if fetched.status == 200 && fetched.content_type.contains("html") {
+                found.push(format!("{} geeft status 200", path));
+            }
+        }
+    }
+    found
 }
 
 fn is_crawlable(url: &Url) -> bool {
@@ -889,7 +1304,7 @@ pub async fn audit_site(input: &str, max_pages: usize) -> Result<AuditResult, St
         },
     });
 
-    match get(&client, &base.join("/robots.txt").map_err(|e| e.to_string())?.to_string()).await {
+    let robots_body = match get(&client, &base.join("/robots.txt").map_err(|e| e.to_string())?.to_string()).await {
         Ok(robots) if robots.status == 200 => {
             let has_sitemap = robots.body.to_lowercase().contains("sitemap:");
             checks.push(SiteCheck {
@@ -901,16 +1316,21 @@ pub async fn audit_site(input: &str, max_pages: usize) -> Result<AuditResult, St
                     "Gevonden, maar zonder sitemap-verwijzing.".to_string()
                 },
             });
+            robots.body
         }
-        _ => checks.push(SiteCheck {
-            label: "robots.txt".to_string(),
-            ok: false,
-            detail: "Niet gevonden. Google crawlt dan alles wat het vindt.".to_string(),
-        }),
-    }
+        _ => {
+            checks.push(SiteCheck {
+                label: "robots.txt".to_string(),
+                ok: false,
+                detail: "Niet gevonden. Google crawlt dan alles wat het vindt.".to_string(),
+            });
+            String::new()
+        }
+    };
 
     let mut seen: HashSet<String> = HashSet::new();
     let mut targets = sitemap_urls(&client, &base, max_pages).await;
+    let sitemap_list = targets.clone();
     let sitemap_count = targets.len();
     for url in &targets {
         seen.insert(url.clone());
@@ -1062,8 +1482,48 @@ pub async fn audit_site(input: &str, max_pages: usize) -> Result<AuditResult, St
             .then(a.url.cmp(&b.url))
     });
 
+    let sitemap = build_sitemap_report(&sitemap_list, &pages);
+    let crawl_budget = build_crawl_budget(&targets, soft_404_probes(&client, &base).await);
+    let ai_crawlers = check_ai_crawlers(&pages, base.as_str(), &robots_body).await;
+
     let tasks = build_tasks(&pages, &findings);
     let score = score_of(&pages);
+
+    if !sitemap.not_found.is_empty() || !sitemap.redirected.is_empty() {
+        checks.push(SiteCheck {
+            label: "Sitemap-URL's".to_string(),
+            ok: false,
+            detail: format!(
+                "{} URL uit de sitemap geeft een fout, {} verwijst door.",
+                sitemap.not_found.len(),
+                sitemap.redirected.len()
+            ),
+        });
+    }
+    if !crawl_budget.traps.is_empty() {
+        checks.push(SiteCheck {
+            label: "Crawl-budget".to_string(),
+            ok: false,
+            detail: format!(
+                "{} patroon gedraagt zich als URL-trap: {}.",
+                crawl_budget.traps.len(),
+                crawl_budget.traps.first().map(|trap| trap.label.clone()).unwrap_or_default()
+            ),
+        });
+    }
+    if let Some(worst) = ai_crawlers.iter().find(|bot| bot.has_problems()) {
+        checks.push(SiteCheck {
+            label: "AI-crawlers".to_string(),
+            ok: false,
+            detail: worst.summary(),
+        });
+    } else if !ai_crawlers.is_empty() {
+        checks.push(SiteCheck {
+            label: "AI-crawlers".to_string(),
+            ok: true,
+            detail: "Alle geteste AI-crawlers zien dezelfde pagina's.".to_string(),
+        });
+    }
 
     Ok(AuditResult {
         base: base.to_string(),
@@ -1077,6 +1537,9 @@ pub async fn audit_site(input: &str, max_pages: usize) -> Result<AuditResult, St
         links: findings,
         orphans,
         checks,
+        ai_crawlers,
+        sitemap,
+        crawl_budget,
         previous: None,
         pages,
     })
@@ -1085,6 +1548,18 @@ pub async fn audit_site(input: &str, max_pages: usize) -> Result<AuditResult, St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_page(url: &str, status: u16) -> AuditPage {
+        let fetched = Fetched {
+            status,
+            final_url: url.to_string(),
+            body: "<html lang=\"nl\"><head><title>Een redelijk lange titel voor de test</title></head><body><h1>Kop</h1><p>wat tekst</p></body></html>".to_string(),
+            content_type: "text/html".to_string(),
+            ms: 20,
+        };
+        let (page, _) = analyse(url, &fetched, &Url::parse("https://example.com/").unwrap());
+        page
+    }
 
     #[test]
     fn leest_loc_urls_uit_een_sitemap() {
@@ -1153,6 +1628,74 @@ mod tests {
         let (page, _) = analyse("https://example.com/", &fetched, &Url::parse("https://example.com/").unwrap());
         let score = score_of(std::slice::from_ref(&page));
         assert_eq!(score, page.score);
+    }
+
+    #[test]
+    fn herkent_robots_blokkade_voor_ai_crawlers() {
+        let robots = "User-agent: GPTBot\nDisallow: /\n\nUser-agent: *\nAllow: /";
+        assert!(robots_blocks(robots, "GPTBot"));
+        assert!(!robots_blocks(robots, "PerplexityBot"));
+    }
+
+    #[test]
+    fn robots_wildcard_geldt_voor_iedere_bot() {
+        assert!(robots_blocks("User-agent: *\nDisallow: /", "CCBot"));
+        assert!(!robots_blocks("User-agent: *\nDisallow: /admin", "CCBot"));
+    }
+
+    #[test]
+    fn vergelijkt_sitemap_met_de_crawl() {
+        let sitemap = vec![
+            "https://example.com/".to_string(),
+            "https://example.com/bestaat-niet".to_string(),
+            "https://example.com/oud".to_string(),
+            "https://example.com/alleen-sitemap".to_string(),
+        ];
+        let pages = vec![
+            test_page("https://example.com/", 200),
+            test_page("https://example.com/bestaat-niet", 404),
+            test_page("https://example.com/nergens", 200),
+        ];
+        let report = build_sitemap_report(&sitemap, &pages);
+        assert!(report.found);
+        assert_eq!(report.urls, 4);
+        assert!(report.not_found.iter().any(|entry| entry.contains("/bestaat-niet")));
+        assert_eq!(report.missing_from_crawl_total, 2);
+        assert!(report.missing_from_crawl.iter().any(|url| url.ends_with("/alleen-sitemap")));
+        assert!(report.not_in_sitemap.iter().any(|url| url.ends_with("/nergens")));
+    }
+
+    #[test]
+    fn herkent_url_traps_en_parametertelling() {
+        let urls = vec![
+            "https://example.com/".to_string(),
+            "https://example.com/zwembad".to_string(),
+            "https://example.com/?e-page-abc=1".to_string(),
+            "https://example.com/?e-page-def=2".to_string(),
+            "https://example.com/?e-page-ghi=3".to_string(),
+            "https://example.com/?s=test".to_string(),
+            "https://example.com/?replytocom=12".to_string(),
+        ];
+        let budget = build_crawl_budget(&urls, Vec::new());
+        assert_eq!(budget.total, 7);
+        assert_eq!(budget.with_params, 5);
+        assert!(budget.param_share_pct > 70.0);
+        let trap = budget
+            .traps
+            .iter()
+            .find(|trap| trap.pattern.contains("e-page"))
+            .expect("Elementor-trap");
+        assert_eq!(trap.count, 3);
+        assert!(trap.robots.contains("Disallow"));
+        assert!(budget.advice.iter().any(|line| line.contains("e-page")));
+    }
+
+    #[test]
+    fn kapt_lange_tekst_af() {
+        assert_eq!(shorten("kort", 10), "kort");
+        let afgekapt = shorten("abcdefghij", 5);
+        assert_eq!(afgekapt.chars().count(), 5);
+        assert!(afgekapt.ends_with('…'));
     }
 
     /// Echte crawl tegen een live site: `cargo test live_audit -- --ignored --nocapture`.
