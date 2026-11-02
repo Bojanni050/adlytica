@@ -8,6 +8,7 @@ import {
   CacheStats, clearAnalyticsCache, getAnalyticsCacheStats,
 } from "../lib/api";
 import { WHITE_LABEL_ENABLED } from "../lib/features";
+import Icon from "../components/Icon";
 
 interface Props {
   accounts: Record<string, string>;
@@ -485,7 +486,9 @@ export default function Settings({ accounts, onAccounts, brand, onBrand, onAlert
               {brandLogo ? (
                 <img className="brand-logo-preview" src={brandLogo} alt="Logo" />
               ) : (
-                <span className="brand-logo-empty">◉</span>
+                <span className="brand-logo-empty">
+                  <Icon name="panel" size={18} />
+                </span>
               )}
               <label className="ghost brand-logo-pick">
                 Bestand kiezen

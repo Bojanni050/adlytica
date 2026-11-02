@@ -3,6 +3,7 @@ import { ACTION_STATUSES, ActionItem, ActionStatus } from "../lib/api";
 import {
   ACTIONS_EVENT, addManualAction, countOpenActions, loadActions, removeAction, setActionStatus,
 } from "../lib/actions";
+import Icon from "../components/Icon";
 
 interface Props {
   onNavigate?: (view: string) => void;
@@ -182,7 +183,9 @@ export default function Actions({ onNavigate }: Props) {
         <p className="hint">Taken laden…</p>
       ) : visible.length === 0 ? (
         <div className="dash-empty">
-          <div className="dash-empty-icon">☑</div>
+          <div className="dash-empty-icon">
+            <Icon name="tasks" size={20} strokeWidth={1.5} />
+          </div>
           <h2>{filter === "alle" ? "Nog geen taken" : `Geen taken met status ${STATUS_LABEL[filter as ActionStatus].toLowerCase()}`}</h2>
           <p className="hint">
             {filter === "alle"
@@ -221,7 +224,7 @@ export default function Actions({ onNavigate }: Props) {
                   </button>
                 ))}
                 <button type="button" className="ghost action-remove" onClick={() => remove(item)} aria-label="Taak verwijderen">
-                  ✕
+                  <Icon name="close" size={11} />
                 </button>
               </div>
             </li>

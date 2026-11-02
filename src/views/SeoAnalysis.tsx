@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { analyticsQuery, num, fmt, Row, getWpSeo, setWpSeo as writeWpSeo, WpSeo } from "../lib/api";
 import { useDateRange } from "../lib/dateRange";
+import Icon from "../components/Icon";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -143,7 +144,7 @@ export default function SeoAnalysis({ accounts }: Props) {
               <tbody>
                 {pages.slice(0, 100).map((r, i) => (
                   <tr key={i} onClick={() => setSelectedPage(selectedPage === r.page ? null : String(r.page))} style={{ cursor: "pointer" }}>
-                    <td style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis" }}>{String(r.page ?? "")}</td>
+                    <td className="ellipsis" title={String(r.page ?? "")} style={{ maxWidth: 300 }}>{String(r.page ?? "")}</td>
                     <td className="num">{fmt(num(r.clicks), 0)}</td>
                     <td className="num">{fmt(num(r.impressions), 0)}</td>
                     <td className="num">{fmt(num(r.position), 1)}</td>
@@ -159,7 +160,12 @@ export default function SeoAnalysis({ accounts }: Props) {
                         Rank Math
                       </button>
                     </td>
-                    <td>{selectedPage === r.page ? "▲" : "▼"}</td>
+                    <td>
+                      <Icon
+                        name={selectedPage === r.page ? "chevronDown" : "chevronRight"}
+                        size={13}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>

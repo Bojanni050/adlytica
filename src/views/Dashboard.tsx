@@ -4,6 +4,8 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { analyticsQuery, clearAnalyticsCache, num, fmt, dateNDaysAgo, QueryParams, Row, notifyNow, AlertSettings, DEFAULT_ALERT_SETTINGS } from "../lib/api";
+import { CHART, SERIES } from "../lib/chartTheme";
+import Icon from "../components/Icon";
 import { exportPdf, loadPdfBrand } from "../lib/pdf";
 import PdfResult from "../components/PdfResult";
 import { shiftDate, useDateRange } from "../lib/dateRange";
@@ -53,16 +55,9 @@ interface WidgetDef {
   render: (data: DashboardData, days: number) => React.ReactNode;
 }
 
-const TOOLTIP_STYLE: React.CSSProperties = {
-  background: "#151b23",
-  border: "1px solid #273140",
-  borderRadius: 8,
-  fontSize: 12,
-  color: "#e6edf3",
-  boxShadow: "0 10px 30px rgba(0, 0, 0, 0.35)",
-};
+const TOOLTIP_STYLE = CHART.tooltip;
 
-const AXIS_TICK = { fill: "#8b98a8", fontSize: 11 };
+const AXIS_TICK = { fill: CHART.axis, fontSize: CHART.tickFontSize, fontFamily: "Geist Mono, monospace" };
 
 /** Periodes in dagen; dezelfde waarden worden in de config bewaard. */
 function compact(value: number): string {
@@ -76,9 +71,17 @@ function sortedByDate(rows: Row[]): Row[] {
   return [...rows].sort((a, b) => String(a.date ?? "").localeCompare(String(b.date ?? "")));
 }
 
+/** Aslabels in dezelfde notatie als de topbalk: "15 aug", niet "08-15". */
+const AXIS_DATE = new Intl.DateTimeFormat("nl-NL", { day: "numeric", month: "short", timeZone: "UTC" });
+
+function axisDate(value: string): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? value.slice(5) : AXIS_DATE.format(date);
+}
+
 function series(rows: Row[], metric: string): { date: string; value: number }[] {
   return sortedByDate(rows).map((row) => ({
-    date: String(row.date ?? "").slice(5),
+    date: axisDate(String(row.date ?? "")),
     value: num(row[metric]),
   }));
 }
@@ -141,20 +144,23 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   );
 }
 
-function Kpi({ rows, metric, color, days }: { rows: Row[]; metric: string; color: string; days: number }) {
+function Kpi({
+  rows, metric, color, days, unit = "",
+}: { rows: Row[]; metric: string; color: string; days: number; unit?: string }) {
   const total = totals(rows, metric);
   const delta = periodDelta(rows, metric, days);
   const trend = series(rows, metric).slice(-days).map((point) => point.value);
 
   return (
     <div className="kpi">
-      <div className="kpi-value">{fmt(total, 0)}</div>
+      <div className="kpi-value">{unit}{fmt(total, 0)}</div>
       <div className="kpi-meta">
         {delta === null ? (
           <span className="hint">{days} dagen totaal</span>
         ) : (
           <span className={`kpi-delta ${delta >= 0 ? "up" : "down"}`}>
-            {delta >= 0 ? "▲" : "▼"} {fmt(Math.abs(delta) * 100, 1)}%
+            <Icon name={delta >= 0 ? "arrowUp" : "arrowDown"} size={11} strokeWidth={1.8} style={{ display: "inline-block", verticalAlign: "-1px" }} />{" "}
+            {fmt(Math.abs(delta) * 100, 1)}%
           </span>
         )}
         {delta !== null && <span className="hint">vs. vorige {days} d</span>}
@@ -184,13 +190,13 @@ function TrendChart({
             <stop offset="100%" stopColor={color} stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid stroke="rgba(39, 49, 64, 0.6)" strokeDasharray="3 3" vertical={false} />
+        <CartesianGrid stroke={CHART.grid} vertical={false} />
         <XAxis
           dataKey="date"
           tick={AXIS_TICK}
           axisLine={false}
           tickLine={false}
-          minTickGap={28}
+          minTickGap={34}
         />
         <YAxis
           tick={AXIS_TICK}
@@ -201,7 +207,7 @@ function TrendChart({
         />
         <Tooltip
           contentStyle={TOOLTIP_STYLE}
-          cursor={{ stroke: "rgba(245, 158, 11, 0.35)" }}
+          cursor={{ stroke: CHART.cursorLine, strokeWidth: 1 }}
           formatter={(value) => [fmt(Number(value), 0), name]}
         />
         <Area
@@ -225,13 +231,13 @@ function SpendChart({ rows }: { rows: Row[] }) {
   return (
     <ResponsiveContainer width="100%" height={210}>
       <BarChart data={data} margin={{ top: 6, right: 6, left: -12, bottom: 0 }}>
-        <CartesianGrid stroke="rgba(39, 49, 64, 0.6)" strokeDasharray="3 3" vertical={false} />
+        <CartesianGrid stroke={CHART.grid} vertical={false} />
         <XAxis
           dataKey="date"
           tick={AXIS_TICK}
           axisLine={false}
           tickLine={false}
-          minTickGap={28}
+          minTickGap={34}
         />
         <YAxis
           tick={AXIS_TICK}
@@ -239,13 +245,14 @@ function SpendChart({ rows }: { rows: Row[] }) {
           tickLine={false}
           width={54}
           tickFormatter={(value) => `€${compact(Number(value))}`}
+          domain={[0, "auto"]}
         />
         <Tooltip
           contentStyle={TOOLTIP_STYLE}
-          cursor={{ fill: "rgba(251, 191, 36, 0.08)" }}
+          cursor={{ fill: CHART.cursorFill }}
           formatter={(value) => [`€ ${fmt(Number(value), 2)}`, "Kosten"]}
         />
-        <Bar dataKey="value" name="Kosten" fill="#fbbf24" radius={[3, 3, 0, 0]} maxBarSize={18} />
+        <Bar dataKey="value" name="Kosten" fill={SERIES.paid} radius={[2, 2, 0, 0]} maxBarSize={16} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -256,7 +263,7 @@ function SessionsChart({ rows }: { rows: Row[] }) {
   for (const row of rows) {
     const key = String(row.date ?? "");
     map.set(key, {
-      date: key.slice(5),
+      date: axisDate(key),
       sessies: num(row.sessions),
       gebruikers: num(row.users),
     });
@@ -269,13 +276,13 @@ function SessionsChart({ rows }: { rows: Row[] }) {
   return (
     <ResponsiveContainer width="100%" height={210}>
       <LineChart data={data} margin={{ top: 6, right: 6, left: -16, bottom: 0 }}>
-        <CartesianGrid stroke="rgba(39, 49, 64, 0.6)" strokeDasharray="3 3" vertical={false} />
+        <CartesianGrid stroke={CHART.grid} vertical={false} />
         <XAxis
           dataKey="date"
           tick={AXIS_TICK}
           axisLine={false}
           tickLine={false}
-          minTickGap={28}
+          minTickGap={34}
         />
         <YAxis
           tick={AXIS_TICK}
@@ -284,10 +291,18 @@ function SessionsChart({ rows }: { rows: Row[] }) {
           width={54}
           tickFormatter={compact}
         />
-        <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value) => fmt(Number(value), 0)} />
-        <Legend wrapperStyle={{ fontSize: 11, color: "#8b98a8" }} iconSize={8} />
-        <Line type="monotone" dataKey="sessies" name="Sessies" stroke="#10b981" strokeWidth={2} dot={false} />
-        <Line type="monotone" dataKey="gebruikers" name="Gebruikers" stroke="#fbbf24" strokeWidth={2} dot={false} />
+        <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ stroke: CHART.cursorLine, strokeWidth: 1 }} formatter={(value) => fmt(Number(value), 0)} />
+        <Legend wrapperStyle={CHART.legend} iconSize={7} iconType="plainline" />
+        <Line type="monotone" dataKey="sessies" name="Sessies" stroke={SERIES.ga4} strokeWidth={1.75} dot={false} />
+        <Line
+          type="monotone"
+          dataKey="gebruikers"
+          name="Gebruikers"
+          stroke={SERIES.ga4Soft}
+          strokeWidth={1.75}
+          strokeDasharray="4 3"
+          dot={false}
+        />
       </LineChart>
     </ResponsiveContainer>
   );
@@ -583,7 +598,7 @@ const WIDGETS: WidgetDef[] = [
     subtitle: "Search Console",
     span: 2,
     category: "KPI",
-    render: (data, days) => <Kpi rows={data.gsc} metric="clicks" color="#10b981" days={days} />,
+    render: (data, days) => <Kpi rows={data.gsc} metric="clicks" color={SERIES.organic} days={days} />,
   },
   {
     id: "kpi-impressions",
@@ -591,7 +606,7 @@ const WIDGETS: WidgetDef[] = [
     subtitle: "Search Console",
     span: 2,
     category: "KPI",
-    render: (data, days) => <Kpi rows={data.gsc} metric="impressions" color="#34d399" days={days} />,
+    render: (data, days) => <Kpi rows={data.gsc} metric="impressions" color={SERIES.organicSoft} days={days} />,
   },
   {
     id: "kpi-spend",
@@ -599,7 +614,7 @@ const WIDGETS: WidgetDef[] = [
     subtitle: "Google Ads",
     span: 2,
     category: "KPI",
-    render: (data, days) => <Kpi rows={data.ads} metric="spend" color="#f59e0b" days={days} />,
+    render: (data, days) => <Kpi rows={data.ads} metric="spend" color={SERIES.paid} days={days} unit="€ " />,
   },
   {
     id: "kpi-conversions",
@@ -607,7 +622,7 @@ const WIDGETS: WidgetDef[] = [
     subtitle: "Google Ads",
     span: 2,
     category: "KPI",
-    render: (data, days) => <Kpi rows={data.ads} metric="conversions" color="#fbbf24" days={days} />,
+    render: (data, days) => <Kpi rows={data.ads} metric="conversions" color={SERIES.paidSoft} days={days} />,
   },
   {
     id: "kpi-sessions",
@@ -615,7 +630,7 @@ const WIDGETS: WidgetDef[] = [
     subtitle: "GA4",
     span: 2,
     category: "KPI",
-    render: (data, days) => <Kpi rows={data.ga4} metric="sessions" color="#10b981" days={days} />,
+    render: (data, days) => <Kpi rows={data.ga4} metric="sessions" color={SERIES.ga4} days={days} />,
   },
   {
     id: "kpi-users",
@@ -623,7 +638,7 @@ const WIDGETS: WidgetDef[] = [
     subtitle: "GA4",
     span: 2,
     category: "KPI",
-    render: (data, days) => <Kpi rows={data.ga4} metric="users" color="#fbbf24" days={days} />,
+    render: (data, days) => <Kpi rows={data.ga4} metric="users" color={SERIES.ga4Soft} days={days} />,
   },
   {
     id: "chart-organic",
@@ -631,7 +646,7 @@ const WIDGETS: WidgetDef[] = [
     subtitle: "Search Console · dagelijkse trend",
     span: 6,
     category: "Grafiek",
-    render: (data) => <TrendChart rows={data.gsc} metric="clicks" color="#10b981" name="Klikken" />,
+    render: (data) => <TrendChart rows={data.gsc} metric="clicks" color={SERIES.organic} name="Klikken" />,
   },
   {
     id: "chart-paid",
@@ -639,7 +654,7 @@ const WIDGETS: WidgetDef[] = [
     subtitle: "Google Ads · dagelijkse trend",
     span: 6,
     category: "Grafiek",
-    render: (data) => <TrendChart rows={data.ads} metric="clicks" color="#f59e0b" name="Klikken" />,
+    render: (data) => <TrendChart rows={data.ads} metric="clicks" color={SERIES.paid} name="Klikken" />,
   },
   {
     id: "chart-spend",
@@ -785,7 +800,11 @@ function WidgetFrame({
       onDragEnd={onDragEnd}
     >
       <header className="widget-head">
-        {editMode && <span className="widget-grip" aria-hidden="true">⠿</span>}
+        {editMode && (
+          <span className="widget-grip" aria-hidden="true">
+            <Icon name="grip" size={15} />
+          </span>
+        )}
         <div className="widget-heading">
           <h3 className="widget-title">{def.title}</h3>
           {def.subtitle && <p className="widget-subtitle">{def.subtitle}</p>}
@@ -813,7 +832,7 @@ function WidgetFrame({
             title="Widget naar links"
             aria-label="Widget naar links"
           >
-            ‹
+            <Icon name="chevronLeft" size={13} />
           </button>
           <button
             type="button"
@@ -823,7 +842,7 @@ function WidgetFrame({
             title="Widget naar rechts"
             aria-label="Widget naar rechts"
           >
-            ›
+            <Icon name="chevronRight" size={13} />
           </button>
           <span className="widget-editbar-hint">
             {def.span <= 2 ? "" : "Sleep om te verplaatsen"}
@@ -835,7 +854,8 @@ function WidgetFrame({
             title="Widget verbergen"
             aria-label="Widget verbergen"
           >
-            {def.span <= 2 ? "✕" : "✕ Verbergen"}
+            <Icon name="close" size={11} />
+            {def.span > 2 && "Verbergen"}
           </button>
         </div>
       )}
@@ -1199,7 +1219,9 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
             title="Nu vernieuwen (cache leegmaken en opnieuw ophalen)"
             aria-label="Nu vernieuwen"
           >
-            <span className={loading ? "spin" : undefined}>↻</span>
+            <span className={loading ? "spin" : undefined} style={{ display: "inline-flex" }}>
+              <Icon name="refresh" size={14} />
+            </span>
           </button>
           <button
             type="button"
@@ -1208,7 +1230,8 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
             disabled={pdfBusy || !loadedOnce}
             title="Rapport als PDF opslaan"
           >
-            {pdfBusy ? "PDF…" : "⬇ PDF"}
+            <Icon name="download" size={13} />
+            {pdfBusy ? "PDF…" : "PDF"}
           </button>
           {editMode ? (
             <>
@@ -1220,7 +1243,8 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
             </>
           ) : (
             <button type="button" className="primary" onClick={() => setEditMode(true)}>
-              ✎ Dashboard aanpassen
+              <Icon name="pencil" size={13} />
+              Dashboard aanpassen
             </button>
           )}
         </div>
@@ -1231,7 +1255,7 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
       {editMode && (
         <div className="edit-bar">
           <span className="edit-dot" />
-          <span>Bewerkmodus — sleep widgets om ze te verplaatsen en verberg ze met ✕.</span>
+          <span>Bewerkmodus — sleep widgets om ze te verplaatsen, of verberg ze met het kruisje.</span>
           <button type="button" className="link-btn" onClick={() => setManagerOpen(true)}>
             Widgets beheren
           </button>
@@ -1258,7 +1282,7 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
                   onClick={() => toggleWidget(widget.id)}
                   aria-pressed={active}
                 >
-                  <span className="wm-check">{active ? "✓" : ""}</span>
+                  <span className="wm-check">{active && <Icon name="check" size={10} strokeWidth={2.2} />}</span>
                   <span className="wm-label">{widget.title}</span>
                 </button>
               );
@@ -1305,7 +1329,7 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
                     title="Zet dit signaal als taak in het actiecentrum"
                   >
                     {taskState[alert.id] === "toegevoegd"
-                      ? "Taak aangemaakt ✓"
+                      ? "Taak aangemaakt"
                       : taskState[alert.id] === "bestond"
                         ? "Staat al in Acties"
                         : taskState[alert.id] === "fout"
@@ -1330,7 +1354,9 @@ export default function Dashboard({ accounts, onNavigate, alertSettings, onAlert
 
       {visibleWidgets.length === 0 ? (
         <div className="dash-empty">
-          <div className="dash-empty-icon">▦</div>
+          <div className="dash-empty-icon">
+            <Icon name="overview" size={20} strokeWidth={1.5} />
+          </div>
           <h2>Je dashboard is leeg</h2>
           <p className="hint">Voeg widgets toe om je SEO- en advertentiecijfers weer te zien.</p>
           <button type="button" className="primary" onClick={() => { setEditMode(true); setManagerOpen(true); }}>

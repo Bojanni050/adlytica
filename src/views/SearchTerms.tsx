@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { analyticsAction, analyticsQuery, num, fmt, Row } from "../lib/api";
 import { useDateRange } from "../lib/dateRange";
+import Icon from "../components/Icon";
 
 interface Props { accounts: Record<string, string>; }
 
@@ -268,7 +269,7 @@ export default function SearchTerms({ accounts }: Props) {
           Selecteer zichtbaar
         </button>
         <button className="ghost" onClick={() => setReloadKey((k) => k + 1)} disabled={loading}>
-          {loading ? "Vernieuwen…" : "↻ Vernieuwen"}
+          {loading ? "Vernieuwen…" : (<><Icon name="refresh" size={13} /> Vernieuwen</>)}
         </button>
       </div>
 

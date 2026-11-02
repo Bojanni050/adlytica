@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import Icon, { IconName } from "./Icon";
 
 export interface PaletteItem {
   id: string;
@@ -98,7 +99,9 @@ export default function CommandPalette({ open, items, onNavigate, onClose }: Pro
               onMouseEnter={() => setActive(index)}
               onClick={() => choose(item)}
             >
-              <span className="palette-icon">{item.icon}</span>
+              <span className="palette-icon">
+                <Icon name={item.icon as IconName} size={15} strokeWidth={1.5} />
+              </span>
               <span className="palette-label">{item.label}</span>
               {item.hint && <span className="palette-hint">{item.hint}</span>}
               {index === active && <span className="palette-enter">↵</span>}
