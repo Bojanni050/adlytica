@@ -335,7 +335,11 @@ export default function Rankings({ accounts }: Props) {
               <div className="widget-empty">Nog te weinig historie voor een grafiek</div>
             ) : (
               <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={chartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                <LineChart
+                  data={chartData}
+                  margin={{ top: 8, right: 8, left: -18, bottom: 0 }}
+                  aria-label={`Positieverloop van ${selected ?? "de gekozen zoekterm"}`}
+                >
                   <CartesianGrid stroke={CHART.grid} vertical={false} />
                   <XAxis dataKey="date" tick={AXIS_TICK} axisLine={false} tickLine={false} minTickGap={30} />
                   <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} reversed allowDecimals={false} domain={yDomain} ticks={yTicks} />

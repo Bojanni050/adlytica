@@ -1877,7 +1877,16 @@ table.data tbody tr:hover .wp-open,
 .adly-source-table table.data { font-size: 10.5px; }
 .adly-source-table .hint { margin: 4px 0 0; font-size: 10.5px; }
 
-/* ── Draaiend element (verversen) ────────────────────────────────────────── */
+/* Recharts 3 zet `accessibilityLayer` standaard aan: een grafiek is met Tab te
+   bereiken en met de pijltjes loop je door de datapunten. Daar hoort een eigen
+   focusring bij, anders verdwaal je in een veld met grafieken. */
+svg.recharts-surface:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--r-3);
+}
+
+/* Draaiend element (verversen) ────────────────────────────────────────── */
 
 .spin { display: inline-block; animation: dash-spin 0.9s linear infinite; }
 @keyframes dash-spin { to { transform: rotate(360deg); } }

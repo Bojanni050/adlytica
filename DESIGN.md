@@ -136,6 +136,24 @@ teken je op dat raster; een tweede iconenbibliotheek ernaast is een fout.
 6. **Datumnotatie is Nederlands en overal gelijk**: `15 aug` in assen en in de
    topbalk, `5 aug – 2 nov` voor een bereik.
 
+## Grafieken (Recharts 3)
+
+De grafieken gebruiken Recharts 3. Vier eigenschappen van die versie zijn hier
+bewust gekozen of teruggedraaid; haal ze niet weg zonder ze te vervangen:
+
+- **`itemSorter={null}` op elke `<Legend>`.** Recharts 3 sorteert legendarijtems
+  standaard alfabetisch. Bij "Sessies en gebruikers" staat de legenda dan in een
+  andere volgorde dan de reeksen getekend zijn.
+- **`aria-label` op elke grafiek.** Recharts 3 zet `accessibilityLayer` standaard
+  aan: de grafiek krijgt `role="application"`, is met Tab te bereiken en met de
+  pijltjes loop je door de datapunten. Zonder `aria-label` is dat een naamloze
+  regio voor een schermlezer. De labels staan in de views, niet in het thema.
+- **De focusring in `styles.css`.** `svg.recharts-surface:focus-visible` krijgt
+  een eigen ring; zonder die regel verdwaal je in een dashboard vol grafieken.
+- **As-labels staan buiten de as-groep.** Sinds v3 renderen ticks als
+  `recharts-cartesian-axis-tick-label`, broers van `.recharts-yAxis` — een
+  selector die daarop mikt vindt niets en lijkt een regressie te melden.
+
 ## Ontwikkelen zonder backend
 
 De app praat via `invoke()` met de Rust-kant, dus in een gewone browser blijft

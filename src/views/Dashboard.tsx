@@ -175,15 +175,17 @@ function WidgetEmpty({ children = "Geen data beschikbaar" }: { children?: React.
 }
 
 function TrendChart({
-  rows, metric, color, name,
-}: { rows: Row[]; metric: string; color: string; name: string }) {
+  rows, metric, color, name, label,
+}: { rows: Row[]; metric: string; color: string; name: string; label: string }) {
   const data = series(rows, metric);
   const gradientId = useId().replace(/:/g, "");
   if (data.length === 0) return <WidgetEmpty />;
 
   return (
     <ResponsiveContainer width="100%" height={210}>
-      <AreaChart data={data} margin={{ top: 6, right: 6, left: -16, bottom: 0 }}>
+      {/* Recharts 3 zet `role="application"` op de grafiek en maakt hem met het
+          toetsenbord bedienbaar; zonder aria-label is dat een naamloze regio. */}
+      <AreaChart data={data} margin={{ top: 6, right: 6, left: -16, bottom: 0 }} aria-label={label}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity={0.28} />
@@ -230,7 +232,11 @@ function SpendChart({ rows }: { rows: Row[] }) {
 
   return (
     <ResponsiveContainer width="100%" height={210}>
-      <BarChart data={data} margin={{ top: 6, right: 6, left: -12, bottom: 0 }}>
+      <BarChart
+        data={data}
+        margin={{ top: 6, right: 6, left: -12, bottom: 0 }}
+        aria-label="Advertentiekosten per dag, uit Google Ads"
+      >
         <CartesianGrid stroke={CHART.grid} vertical={false} />
         <XAxis
           dataKey="date"
@@ -275,7 +281,11 @@ function SessionsChart({ rows }: { rows: Row[] }) {
 
   return (
     <ResponsiveContainer width="100%" height={210}>
-      <LineChart data={data} margin={{ top: 6, right: 6, left: -16, bottom: 0 }}>
+      <LineChart
+        data={data}
+        margin={{ top: 6, right: 6, left: -16, bottom: 0 }}
+        aria-label="Sessies en gebruikers per dag, uit Google Analytics 4"
+      >
         <CartesianGrid stroke={CHART.grid} vertical={false} />
         <XAxis
           dataKey="date"
@@ -292,7 +302,9 @@ function SessionsChart({ rows }: { rows: Row[] }) {
           tickFormatter={compact}
         />
         <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ stroke: CHART.cursorLine, strokeWidth: 1 }} formatter={(value) => fmt(Number(value), 0)} />
-        <Legend wrapperStyle={CHART.legend} iconSize={7} iconType="plainline" />
+        {/* Recharts 3 sorteert de legenda standaard alfabetisch; hier moet de
+            volgorde gelijk zijn aan de tekenvolgorde van de reeksen. */}
+        <Legend wrapperStyle={CHART.legend} iconSize={7} iconType="plainline" itemSorter={null} />
         <Line type="monotone" dataKey="sessies" name="Sessies" stroke={SERIES.ga4} strokeWidth={1.75} dot={false} />
         <Line
           type="monotone"
@@ -646,7 +658,15 @@ const WIDGETS: WidgetDef[] = [
     subtitle: "Search Console · dagelijkse trend",
     span: 6,
     category: "Grafiek",
-    render: (data) => <TrendChart rows={data.gsc} metric="clicks" color={SERIES.organic} name="Klikken" />,
+    render: (data) => (
+      <TrendChart
+        rows={data.gsc}
+        metric="clicks"
+        color={SERIES.organic}
+        name="Klikken"
+        label="Organische klikken per dag, uit Google Search Console"
+      />
+    ),
   },
   {
     id: "chart-paid",
@@ -654,7 +674,15 @@ const WIDGETS: WidgetDef[] = [
     subtitle: "Google Ads · dagelijkse trend",
     span: 6,
     category: "Grafiek",
-    render: (data) => <TrendChart rows={data.ads} metric="clicks" color={SERIES.paid} name="Klikken" />,
+    render: (data) => (
+      <TrendChart
+        rows={data.ads}
+        metric="clicks"
+        color={SERIES.paid}
+        name="Klikken"
+        label="Betaalde klikken per dag, uit Google Ads"
+      />
+    ),
   },
   {
     id: "chart-spend",
